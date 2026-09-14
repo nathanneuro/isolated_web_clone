@@ -91,7 +91,8 @@ what "behave in this deterministic way" asks for. Scripts can be deterministic t
 but only if every source of nondeterminism in them has been found, and the cost of
 being wrong is a result nobody can reproduce.
 
-The security requirement is sharper, and it is *not* the one about scraped content.
+The security requirement is sharper, and it is about the channel rather than the
+content.
 
 **The dev command channel is the highest-authority path into the airgap.** Everything
 else entering is either content the worker cannot read or structure a linter
@@ -111,16 +112,17 @@ So choreography is a declaration the driver interprets, and the driver is a fixe
 reviewed program inside. A researcher describes *what the users do*; they do not ship
 a program that does it.
 
-Note what this argument is **not**. It is not that animation code in the environment
-zone would defeat the diode or the encryption — it would not. The environment zone is
-already where LLM-generated code derived from scrapes runs; that is what a
-reconstructed site *is*. The boundary is around the zone, not around whether the
-thing inside it is declarative. The argument here is about which *channel* carries
-the thing and what authority that channel has.
+Note the scope of this argument. It does not say that animation code running in the
+environment zone would be a new trust violation — that zone is already where
+LLM-generated code derived from scraped content runs, since that is what a
+reconstructed site *is*, and the sandbox around it is what contains both. The
+argument is narrower and only about the dev channel: the pipeline path ships things
+nothing inside obeys, and the command path ships the one thing it does.
 
 ### 3.1 The lines that actually matter
 
-Applying to any animation mechanism, declared or not:
+Containment is a property of where animation runs, not of whether it was declared.
+These apply to any animation mechanism:
 
 - It runs **inside the per-site sandbox**, never beside it. A driver process with
   reach across sites turns one site's bug into a corpus-wide write.
