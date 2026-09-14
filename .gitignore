@@ -40,3 +40,8 @@ outputs/
 keys/
 *.key
 *.pem
+
+# Generated example content (reproducible: example/synthetic_site/generate_content.py)
+example/synthetic_site/content/seed.sqlite
+example/synthetic_site/content/fixtures.json
+example/synthetic_site/index/main.shard

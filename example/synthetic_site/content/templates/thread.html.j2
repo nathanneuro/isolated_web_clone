@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ q_thread_by_id.title }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header><a href="/" id="home-link">{{ site_name }}</a></header>
+  <main>
+    <article id="thread" data-thread-id="{{ q_thread_by_id.id }}">
+      <h1 id="thread-title">{{ q_thread_by_id.title }}</h1>
+      <p class="thread-author">{{ q_thread_by_id.author }}</p>
+      <div id="thread-body">{{ q_thread_by_id.body }}</div>
+    </article>
+    <ul id="reply-list">
+      {% for reply in q_replies_for_thread %}
+      <li class="reply-item" data-reply-id="{{ reply.id }}">
+        <span class="reply-author">{{ reply.author }}</span>
+        <div class="reply-body">{{ reply.body }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    <form id="reply-form" action="/thread/{{ q_thread_by_id.id }}/reply" method="post">
+      <textarea id="reply-body" name="body" required></textarea>
+      <input type="text" id="reply-author" name="author">
+      <button type="submit" id="reply-submit">Post reply</button>
+    </form>
+  </main>
+</body>
+</html>

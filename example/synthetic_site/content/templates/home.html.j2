@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ site_name }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1 id="site-title">{{ site_name }}</h1>
+    <form id="search-form" action="/search" method="get">
+      <input type="text" id="search-input" name="q" placeholder="Search threads">
+      <button type="submit" id="search-submit">Search</button>
+    </form>
+  </header>
+  <main>
+    <ul id="thread-list">
+      {% for thread in q_recent_threads %}
+      <li class="thread-item" data-thread-id="{{ thread.id }}">
+        <a class="thread-link" href="/thread/{{ thread.id }}">{{ thread.title }}</a>
+        <span class="thread-author">{{ thread.author }}</span>
+        <time datetime="{{ thread.created_at }}">{{ thread.created_at }}</time>
+      </li>
+      {% endfor %}
+    </ul>
+  </main>
+  <footer><a href="/login" id="login-link">Sign in</a></footer>
+</body>
+</html>

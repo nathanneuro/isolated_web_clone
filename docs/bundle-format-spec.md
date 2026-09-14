@@ -182,6 +182,10 @@ The site spec is plaintext structure describing *what to build*, never *what it 
 
 The spec has **no free-text fields**. If the outside reconstruction agent needs to communicate something to the inside worker that does not fit the schema, that is a schema gap to be fixed outside, not a note to be passed inside.
 
+**Blob handles are assigned at build time, not by the reconstructor.** A `blob_ref` is the BLAKE3 hash of a blob's *ciphertext* (§5), which does not exist until `bundle-build` encrypts. The reconstruction agent therefore authors slots with logical paths (`content/fixtures.json`, `content/assets/style.css`) and `bundle-build` rewrites every `blob_ref`, `seed_blob_ref`, `shard_refs` entry, and `fixture_blob_ref` to its content-addressed form as it encrypts, immediately before linting and signing. A rewrite that leaves any logical path unresolved is a build failure, not a lint finding.
+
+Consequently the reference rules below can only be checked against a manifest. `bundle-lint` invoked without one — as `recon-check` does on a package that has not been built yet — skips them rather than approximating them. The reconstructor's refs are validated by the rewrite succeeding.
+
 **Linting.** `bundle-lint` runs outside before signing and again on the receiver. It rejects a spec if:
 
 - any string value exceeds 64 characters, except `blob_ref` and `path` fields (which are validated against their own patterns);

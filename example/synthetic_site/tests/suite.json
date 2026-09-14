@@ -1,0 +1,17 @@
+{
+  "suite_id": "site-000001-r1-tests",
+  "runner": "playwright-v1",
+  "fixture_blob_ref": "content/fixtures.json",
+  "tests": [
+    { "id": "T001", "kind": "route_ok", "route": "r_home", "expect_status": 200 },
+    { "id": "T002", "kind": "route_ok", "route": "r_thread", "expect_status": 200, "path_params_fixture": "fx_thread_1" },
+    { "id": "T003", "kind": "route_ok", "route": "r_search", "expect_status": 200 },
+    { "id": "T004", "kind": "links_resolve", "route": "r_home", "min_internal_links": 5 },
+    { "id": "T005", "kind": "search_returns", "search": "s_main", "query_fixture": "fx_q1", "expect_min_results": 1, "expect_contains_fixture": "fx_q1_doc" },
+    { "id": "T006", "kind": "form_persists", "form": "f_reply", "route": "r_reply", "path_params_fixture": "fx_thread_1", "input_fixture": "fx_reply_1", "verify_query": "q_replies_for_thread", "expect_row_count_delta": 1 },
+    { "id": "T007", "kind": "render_diff", "route": "r_home", "reference_fixture": "fx_home_png", "max_distance": 0.35 },
+    { "id": "T008", "kind": "no_external_requests", "route": "r_home" },
+    { "id": "T009", "kind": "no_external_requests", "route": "r_thread", "path_params_fixture": "fx_thread_1" },
+    { "id": "T010", "kind": "no_external_requests", "route": "r_search" }
+  ]
+}

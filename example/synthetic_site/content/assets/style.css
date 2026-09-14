@@ -1,0 +1,18 @@
+/* Invented styles for the synthetic example site. No external fonts, no imports:
+   an @import or a webfont URL would fail the no_external_requests test, which is
+   exactly what that test is for. */
+:root { --fg: #1a1a1a; --bg: #fbfbf9; --accent: #3a5f7d; --muted: #6b6b6b; }
+body { font-family: Georgia, "Times New Roman", serif; color: var(--fg);
+       background: var(--bg); margin: 0 auto; max-width: 46rem; padding: 2rem 1rem; }
+header { border-bottom: 2px solid var(--accent); padding-bottom: 1rem; }
+h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+a { color: var(--accent); }
+#thread-list, #reply-list, #result-list { list-style: none; padding: 0; }
+.thread-item, .reply-item, .result-item { padding: 0.75rem 0;
+       border-bottom: 1px solid #e4e2dc; }
+.thread-author, .reply-author { color: var(--muted); font-size: 0.85rem; }
+time { color: var(--muted); font-size: 0.8rem; }
+textarea, input[type=text] { width: 100%; font: inherit; padding: 0.4rem;
+       border: 1px solid #ccc; }
+button { font: inherit; padding: 0.4rem 1rem; background: var(--accent);
+       color: #fff; border: 0; cursor: pointer; }
