@@ -196,6 +196,13 @@ class TestTrust:
         assert bytes(verify_key) == bytes(new.verify_key)
         assert types == frozenset({"site", "index_only"})
 
+        # The rotation outlives the process.
+        from nacl.signing import VerifyKey as VK
+
+        reloaded = Receiver(receiver.state_dir, receiver.worker_inbox, receiver.command_inbox, receiver.quarantine,
+                            {"dev-demo": (VK((keys / "dev-verify.pub").read_bytes()), frozenset({"command"}))})
+        assert bytes(reloaded.verify_keys["pipeline-2026q4"][0]) == bytes(new.verify_key)
+
         # The new key signs commands? No: it was rotated in as a pipeline key.
         send(tmp_path, keys, receiver, {"op": "stop_run", "run_id": "run-x"},
              identity=SigningIdentity("pipeline-2026q4", KeyRole.DEV, new), expect=Status.REJECT_SIGNATURE)

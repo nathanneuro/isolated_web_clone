@@ -112,7 +112,24 @@ class Receiver:
         for directory in (self.state_dir, self.worker_inbox, self.command_inbox, self.quarantine):
             directory.mkdir(parents=True, exist_ok=True)
         self._sequence_file = self.state_dir / "sequence-high-water.json"
+        self._trust_file = self.state_dir / "rotated-verify-keys.json"
         self.counters = ReceiverCounters()
+        # Keys rotated in by command (§9) outlive the process. They are loaded after
+        # the provisioned set so a provisioned key can never be silently replaced.
+        if self._trust_file.exists():
+            for key_id, entry in json.loads(self._trust_file.read_text()).items():
+                assert key_id not in self.verify_keys, f"rotated key {key_id} collides with a provisioned key"
+                self.verify_keys[key_id] = (VerifyKey(bytes.fromhex(entry["hex"])), frozenset(entry["types"]))
+
+    def add_verify_key(self, key_id: str, key: VerifyKey, types: frozenset[str]) -> None:
+        """§9 rotate_verification_key: extend trust, durably. Command-driven only."""
+        assert key_id not in self.verify_keys, key_id
+        self.verify_keys[key_id] = (key, types)
+        rotated = json.loads(self._trust_file.read_text()) if self._trust_file.exists() else {}
+        rotated[key_id] = {"hex": bytes(key).hex(), "types": sorted(types)}
+        tmp = self._trust_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(rotated, indent=1))
+        tmp.replace(self._trust_file)
 
     # -- sequence high-water mark (§4.2) ------------------------------------
 

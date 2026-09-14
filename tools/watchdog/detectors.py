@@ -166,3 +166,67 @@ class CanaryListener(Detector):
     def close(self) -> None:
         self._closed = True
         self._sock.close()
+
+
+class FileIntegrityDetector(Detector):
+    """D8: the VMM binary, guest kernel, base rootfs, and broker code must not change.
+
+    Hashes each path at construction. `total` is the number of paths whose hash
+    has ever differed or that have gone missing; it never decreases, because a
+    file restored after tampering is still a file that was tampered with.
+    """
+
+    def __init__(self, paths: list[Path]) -> None:
+        super().__init__(DetectorId.D8_HOST_INTEGRITY)
+        from blake3 import blake3
+
+        self._hash = lambda p: blake3(Path(p).read_bytes()).hexdigest()
+        self.paths = [Path(p) for p in paths]
+        assert self.paths, "nothing to watch"
+        self._expected = {p: self._hash(p) for p in self.paths}
+        self._tripped: set[Path] = set()
+
+    def total(self) -> int:
+        for path, expected in self._expected.items():
+            if not path.is_file() or self._hash(path) != expected:
+                self._tripped.add(path)
+        return len(self._tripped)
+
+
+class StateBypassDetector(Detector):
+    """D10: a change to a site's backing DB not attributable to an env-broker request.
+
+    The site attributes every write to a writer. The env broker counts the writes
+    it performed as `agent`. If the site holds more agent-written rows than the
+    broker performed writes, something reached the database around the broker,
+    which is either a broker client bug or an escape. Either halts the run.
+    """
+
+    def __init__(self, env_factory) -> None:
+        super().__init__(DetectorId.D10_STATE_BYPASS)
+        self._factory = env_factory
+        self._peak = 0
+
+    def total(self) -> int:
+        import sqlite3
+
+        from tools.compose_fastapi_sqlite_v1 import WRITER_COLUMN
+
+        excess = 0
+        for episode in list(self._factory.open_episodes):
+            db = sqlite3.connect(episode.db_path)
+            try:
+                tables = [r[0] for r in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+                rows = 0
+                for table in tables:
+                    assert table.isidentifier(), table
+                    if WRITER_COLUMN in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+                        rows += db.execute(
+                            f"SELECT COUNT(*) FROM {table} WHERE {WRITER_COLUMN} = 'agent'"
+                        ).fetchone()[0]
+            finally:
+                db.close()
+            excess += max(0, rows - episode.env.counters.writes)
+        self._peak = max(self._peak, excess)
+        return self._peak

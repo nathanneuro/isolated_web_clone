@@ -55,6 +55,7 @@ class SiteEnvFactory:
         # Shared with every EnvBroker this factory hands out. The watchdog severs
         # it; after that no episode opens and the open one is refused.
         self.gate = gate or BrokerGate()
+        self.open_episodes: list[Episode] = []  # read by the D10 detector
 
     def db_path_for(self, episode_id: str) -> Path:
         assert episode_id and "/" not in episode_id, episode_id
@@ -75,7 +76,12 @@ class SiteEnvFactory:
         shutil.copyfile(self.seed_db, db_path)
         site = compose_app(self.spec, self.content_dir, db_path)
         with TestClient(site.app, base_url=f"http://{site.hostname}") as client:
-            yield Episode(EnvBroker(client, site.hostname, gate=self.gate), db_path)
+            episode = Episode(EnvBroker(client, site.hostname, gate=self.gate), db_path)
+            self.open_episodes.append(episode)
+            try:
+                yield episode
+            finally:
+                self.open_episodes.remove(episode)
 
 
 def build_task(

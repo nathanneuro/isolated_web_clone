@@ -55,7 +55,7 @@ def broker_web_agent(
                 if env_factory.gate.severed:
                     break  # halted by the watchdog; the episode ends here, unscored as a success
                 observation = observation_from(
-                    view, question.task, step, action_broker.counters
+                    view, question.task, step, action_broker.counters, env_factory.gate
                 )
                 action = action_broker.act(observation)
                 transcript.append(

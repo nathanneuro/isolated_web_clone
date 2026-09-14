@@ -162,6 +162,7 @@ class EnvCounters:
     off_site: int = 0
     bad_action: int = 0
     steps: int = 0
+    writes: int = 0  # successful POSTs; not a registry metric, read by D10
 
     def as_metrics(self) -> dict[str, int]:
         return {"broker.env_denied": self.denied + self.off_site + self.bad_action}
@@ -193,6 +194,7 @@ class EnvBroker:
         self.counters.steps += 1
         if self._gate.severed:
             return self.observe()
+        self._gate.check_canary(action.selector, action.text)  # D4
         selectors = {e.selector for e in elements}
 
         if action.kind is ActionKind.GOTO:
@@ -231,6 +233,7 @@ class EnvBroker:
             return self.observe()
 
         self.counters.bad_action += 1
+        self._gate.schema_violations += 1  # D9: a kind outside the enum reached us
         return self.observe()
 
     def _submit(self, action: Action, selectors: set[str]) -> PageView:
@@ -248,6 +251,9 @@ class EnvBroker:
         response = self._client.post(
             form_action, data=data, headers=AGENT_WRITER, follow_redirects=False
         )
+        if response.status_code < 400:
+            self.counters.writes += 1
+            self._gate.agent_writes += 1  # D10 compares this with what the site attributes
         if response.status_code in (302, 303) and (location := response.headers.get("location")):
             if INTERNAL_PATH.match(location):
                 self.current_path = location
@@ -291,8 +297,11 @@ class EnvBroker:
         return parser.action, parser.fields
 
 
-def observation_from(view: PageView, task: str, step: int, counters: BrokerCounters | None = None) -> Observation:
+def observation_from(
+    view: PageView, task: str, step: int, counters: BrokerCounters | None = None,
+    gate: BrokerGate | None = None,
+) -> Observation:
     """Bridge a PageView into the action broker's Observation. Bounded by both."""
     from .action_broker import clamp_observation
 
-    return clamp_observation(task, view.path, view.page_text, list(view.elements), step, counters)
+    return clamp_observation(task, view.path, view.page_text, list(view.elements), step, counters, gate)

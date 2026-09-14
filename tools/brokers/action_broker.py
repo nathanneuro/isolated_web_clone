@@ -186,6 +186,9 @@ class ActionBroker:
         self.counters.requests += 1
         if self._gate.severed:
             return Action(ActionKind.NOOP)
+        # D4: the agent zone composes the observation, so the canary can arrive here
+        # in any field, including one it copied from a page the env broker served.
+        self._gate.check_canary(observation.task, observation.page_text, observation.path)
         completion = self._model.generate(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -249,16 +252,20 @@ class ActionBroker:
 def clamp_observation(
     task: str, path: str, page_text: str, elements: list[Element], step: int,
     counters: BrokerCounters | None = None,
+    gate: BrokerGate | None = None,
 ) -> Observation:
     """Build an Observation that satisfies the caps, counting what was cut.
 
     The agent zone calls this rather than constructing an Observation directly, so
     an oversized page is truncated and counted instead of raising inside the VM.
+    An oversized observation is also a D9 event on the gate: a request that did
+    not fit the fixed schema.
     """
-    if counters is not None and (
-        len(page_text) > MAX_PAGE_CHARS or len(elements) > MAX_ELEMENTS
-    ):
-        counters.truncated_observations += 1
+    if len(page_text) > MAX_PAGE_CHARS or len(elements) > MAX_ELEMENTS:
+        if counters is not None:
+            counters.truncated_observations += 1
+        if gate is not None:
+            gate.schema_violations += 1
     return Observation(
         task=task[:MAX_TASK_CHARS],
         path=path[:MAX_PATH_CHARS],

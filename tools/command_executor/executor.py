@@ -184,7 +184,5 @@ class CommandExecutor:
         raw = base64.b64decode(p["new_verification_key_b64"], validate=True)
         if len(raw) != 32:
             return CommandReceipt(bundle_id, op, CommandStatus.REJECT_PARAMS, "not an Ed25519 public key")
-        # In memory only. A deployment's receiver loads its trust set from the control
-        # plane at start, and this is where that write would go.
-        self._receiver.verify_keys[p["new_signer_key_id"]] = (VerifyKey(raw), ROLE_TYPES[p["new_signer_role"]])
+        self._receiver.add_verify_key(p["new_signer_key_id"], VerifyKey(raw), ROLE_TYPES[p["new_signer_role"]])
         return CommandReceipt(bundle_id, op, CommandStatus.APPLIED)
