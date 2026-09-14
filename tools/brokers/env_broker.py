@@ -35,6 +35,7 @@ from .action_broker import (
     Element,
     Observation,
 )
+from .gate import BrokerGate
 
 MAX_STEPS_PER_EPISODE = 100
 INTERNAL_PATH = re.compile(r"^/[A-Za-z0-9_\-./?=&{}]{0,255}$")
@@ -169,21 +170,29 @@ class EnvCounters:
 class EnvBroker:
     """Drives one live site on the agent's behalf. One site, one episode."""
 
-    def __init__(self, client, hostname: str, search_path: str = "/search") -> None:
+    def __init__(
+        self, client, hostname: str, search_path: str = "/search", gate: BrokerGate | None = None
+    ) -> None:
         self._client = client
         self.hostname = hostname
         self.search_path = search_path
+        self._gate = gate or BrokerGate()  # the watchdog's halt: refused and counted
         self.counters = EnvCounters()
         self._form_state: dict[str, str] = {}
         self.current_path = "/"
         self._last_body = ""
 
     def observe(self) -> PageView:
+        if self._gate.severed:
+            self.counters.denied += 1
+            return PageView(path=self.current_path, status=503, page_text="")
         return self._get(self.current_path)
 
     def apply(self, action: Action, elements: tuple[Element, ...]) -> PageView:
         """Perform one action. Anything not permitted is a no-op plus a counter."""
         self.counters.steps += 1
+        if self._gate.severed:
+            return self.observe()
         selectors = {e.selector for e in elements}
 
         if action.kind is ActionKind.GOTO:

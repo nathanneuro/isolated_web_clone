@@ -32,6 +32,8 @@ from enum import Enum
 
 from tools.inference_zone import GenerationLimits, ModelServer
 
+from .gate import BrokerGate
+
 # Hard caps. The agent's observation is attacker-influenced (it is scraped content
 # rendered by a site the agent is browsing), so every field is bounded here rather
 # than trusted to be reasonable.
@@ -160,9 +162,18 @@ FEW_SHOT: tuple[dict[str, str], ...] = (
 class ActionBroker:
     """Deterministic mediator. Holds a ModelServer; exposes one method."""
 
-    def __init__(self, model_server: ModelServer, limits: GenerationLimits | None = None) -> None:
+    def __init__(
+        self,
+        model_server: ModelServer,
+        limits: GenerationLimits | None = None,
+        gate: BrokerGate | None = None,
+    ) -> None:
         self._model = model_server
         self._limits = limits or GenerationLimits(max_new_tokens=96)
+        # The watchdog's halt (agent-sandbox-spec §6 step 2). A severed broker
+        # answers every observation with NOOP and never reaches the model; the
+        # counter still ticks so the refusal is visible on the dashboard.
+        self._gate = gate or BrokerGate()
         self.counters = BrokerCounters()
 
     @property
@@ -173,6 +184,8 @@ class ActionBroker:
     def act(self, observation: Observation) -> Action:
         """One observation in, one Action out. Never raises on model output."""
         self.counters.requests += 1
+        if self._gate.severed:
+            return Action(ActionKind.NOOP)
         completion = self._model.generate(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},

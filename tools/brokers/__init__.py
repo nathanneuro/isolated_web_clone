@@ -7,8 +7,10 @@ that improvises.
 
 from .action_broker import Action, ActionBroker, ActionKind, BrokerCounters, Element, Observation
 from .env_broker import EnvBroker, EnvCounters, PageView, observation_from
+from .gate import BrokerGate
 
 __all__ = [
+    "BrokerGate",
     "Action",
     "ActionBroker",
     "ActionKind",
