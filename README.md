@@ -8,6 +8,14 @@ This repository contains the **harness, specs, prompts, and agent skill docs**. 
 
 Recent web-agent incidents have shared a shape: an agent with a browser, a model with a network path, and a log shipper with a token. This design removes all three. Scraped sites are rebuilt as functional-but-not-identical replicas outside, encrypted, pushed through a hardware data diode, and composed inside by a worker that never reads the content it deploys. The only automated path out is a fixed-schema numeric channel to a dev-owned reader. Humans read logs at a wired terminal in the room.
 
+## Who this is for
+
+Labs running evaluations against models capable enough that "the model broke out of the eval harness" is an incident report rather than a thought experiment. That is a short list today. It is a design premise of this document that the list gets longer, and that the time to have a published, reviewed architecture is before you need it rather than after.
+
+It is sized accordingly: **hundreds of thousands of reconstructed sites**, from a crawl-and-reconstruction effort at serious cost, with per-episode environment resets cheap enough to be uninteresting. Several design calls invert at that scale — [`docs/scale-and-storage-spec.md`](docs/scale-and-storage-spec.md) is explicit about which ones and why, because a reader who mentally substitutes "a few dozen sites" will reasonably conclude parts of this are over-built.
+
+If your evals run models that cannot meaningfully attempt an escape, this is more machinery than you need. Take the parts that are cheap anyway: the one-way ingress, the structure/content split, and never letting an LLM inside the trusted zone read scraped text.
+
 The environment design itself (crawl → LLM-regenerated functional replicas → local search engine → RL) is described in `docs/design-plan.md` with a survey of prior work (InSTA, WebArena, Search-R1, AppWorld, τ-bench, ToolSandbox). This README covers the security architecture that wraps it.
 
 ## Architecture
@@ -57,6 +65,7 @@ Everything in the repo exists to hold one of these:
 | [`docs/egress-metrics-spec.md`](docs/egress-metrics-spec.md) | The outbound channel: fixed-size frames, metric registry, sender, reader, bandwidth ceiling |
 | [`docs/agent-sandbox-spec.md`](docs/agent-sandbox-spec.md) | Isolating the agent being trained from the inference and environment zones; escape detection and the automatic halt |
 | [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) | The wired developer station, hardware enforcement of the egress filter, bulk export |
+| [`docs/scale-and-storage-spec.md`](docs/scale-and-storage-spec.md) | What 10^5 sites changes: where site data lives, where a real database belongs, and why those are different places |
 | [`skills/site-reconstruct/SKILL.md`](skills/site-reconstruct/SKILL.md) | Outside agent: scrape → spec + templates + seed DB + tests |
 | [`skills/site-qa/SKILL.md`](skills/site-qa/SKILL.md) | Outside agent: adversarial checks before encryption |
 | [`skills/inside-worker/SKILL.md`](skills/inside-worker/SKILL.md) | Inside agent: verified bundle → deployment, structure only |
