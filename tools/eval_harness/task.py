@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from inspect_ai import Task
 from inspect_ai.dataset import MemoryDataset, Sample
@@ -16,6 +19,12 @@ from .scorer import state_diff_scorer
 from .solver import broker_web_agent
 
 
+@dataclass(frozen=True)
+class Episode:
+    env: EnvBroker
+    db_path: Path
+
+
 class SiteEnvFactory:
     """Hands out a fresh site per episode.
 
@@ -23,6 +32,10 @@ class SiteEnvFactory:
     On a reflink-capable filesystem this is a metadata operation; here it is an
     ordinary copy, which is still far cheaper than a server-side database reset and
     is why site backends are files.
+
+    Episodes are keyed by an id the caller supplies, not by the question: Inspect
+    runs epochs of the same question concurrently, and two episodes sharing a
+    database file would reset each other under the scorer.
     """
 
     def __init__(self, spec: dict, content_dir: Path, seed_db: Path, work_dir: Path) -> None:
@@ -32,18 +45,25 @@ class SiteEnvFactory:
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-    def db_path_for(self, question: EvalQuestion) -> Path:
-        return self.work_dir / f"{question.id}.sqlite"
+    def db_path_for(self, episode_id: str) -> Path:
+        assert episode_id and "/" not in episode_id, episode_id
+        return self.work_dir / f"{episode_id}.sqlite"
 
-    def __call__(self, question: EvalQuestion) -> EnvBroker:
+    @contextmanager
+    def episode(self, question: EvalQuestion, episode_id: str) -> Iterator[Episode]:
+        """A fresh site for one episode. The database outlives the site so the
+        scorer can read it; the client does not."""
         from fastapi.testclient import TestClient
 
-        episode_db = self.db_path_for(question)
-        shutil.copyfile(self.seed_db, episode_db)
-        site = compose_app(self.spec, self.content_dir, episode_db)
-        client = TestClient(site.app, base_url=f"http://{site.hostname}")
-        client.__enter__()
-        return EnvBroker(client, site.hostname)
+        assert question.site_id == self.spec["site_id"], (
+            f"{question.id} is for {question.site_id}; this factory serves {self.spec['site_id']}"
+        )
+        db_path = self.db_path_for(episode_id)
+        assert not db_path.exists(), f"episode {episode_id} already ran"
+        shutil.copyfile(self.seed_db, db_path)
+        site = compose_app(self.spec, self.content_dir, db_path)
+        with TestClient(site.app, base_url=f"http://{site.hostname}") as client:
+            yield Episode(EnvBroker(client, site.hostname), db_path)
 
 
 def build_task(
@@ -53,11 +73,9 @@ def build_task(
     name: str = "isolated-web-clone",
 ) -> Task:
     by_id = {q.id: q for q in questions}
+    assert len(by_id) == len(questions), "duplicate question ids"
     dataset = MemoryDataset(
-        [
-            Sample(id=q.id, input=q.task, target=q.expected_answer or "state-diff")
-            for q in questions
-        ],
+        [Sample(id=q.id, input=q.task, target=q.expected_answer or "") for q in questions],
         name=name,
     )
     return Task(

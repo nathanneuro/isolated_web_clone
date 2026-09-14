@@ -120,11 +120,6 @@
           {
             "name": "created_at",
             "type": "timestamp"
-          },
-          {
-            "name": "driver_tag",
-            "type": "text",
-            "nullable": true
           }
         ]
       }

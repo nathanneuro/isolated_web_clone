@@ -28,6 +28,17 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 PARAM_REF = re.compile(r"^\{([a-z][a-z0-9_]{0,62})\}$")
 
 
+# Write attribution (synthetic-population-spec §6). Every table a mutation can write
+# gets this column, added by the composer so no reconstruction has to remember it.
+# Every POST must name its writer in this header or it is refused: the agent's own
+# path (the env broker) sends "agent", drivers send their actor id, go-live sends
+# "golive". Seed rows are NULL. The scorer credits only "agent", so a write that
+# arrives with no attribution is a loud 400 rather than a silent point.
+WRITER_COLUMN = "writer"
+WRITER_HEADER = "x-writer"
+WRITER_VALUE = re.compile(r"^[a-z][a-z0-9_\-]{0,62}$")
+
+
 class ComposeError(Exception):
     """The spec asked for a pattern this generator does not support.
 
@@ -146,6 +157,7 @@ def compose_app(spec: dict, content_dir: Path, db_path: Path) -> ComposedSite:
         return db
 
     assets = {a["path"]: content_dir / a["blob_ref"] for a in spec.get("assets", [])}
+    _ensure_writer_column(connect, mutations)
 
     @app.get("/static/{asset:path}")
     def serve_asset(asset: str) -> Response:
@@ -163,10 +175,18 @@ def compose_app(spec: dict, content_dir: Path, db_path: Path) -> ComposedSite:
     return ComposedSite(app=app, db_path=db_path, hostname=spec["hostname"])
 
 
-def _has_column(connect, table: str, column: str) -> bool:
+def _ensure_writer_column(connect, mutations: dict) -> None:
+    """Add the attribution column to every table a mutation names, if absent."""
     db = connect()
     try:
-        return any(row["name"] == column for row in db.execute(f"PRAGMA table_info({table})"))
+        for mutation in mutations.values():
+            table = _check_identifier(mutation["table"], "table")
+            columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+            if not columns:
+                raise ComposeError(f"mutation {mutation['id']} names missing table {table}")
+            if WRITER_COLUMN not in columns:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {WRITER_COLUMN} TEXT")
+        db.commit()
     finally:
         db.close()
 
@@ -225,8 +245,11 @@ def _register_route(
     }
 
     async def post_handler(request: Request, _route=route):
+        writer = request.headers.get(WRITER_HEADER, "")
+        if not WRITER_VALUE.match(writer):
+            return HTMLResponse("missing writer attribution", status_code=400)
         body = await request.form()
-        values, columns = [], []
+        columns, values = [WRITER_COLUMN], [writer]
         for field in form["fields"]:
             value = body.get(field["name"])
             if field.get("required") and not value:
@@ -239,14 +262,6 @@ def _register_route(
 
         columns.append("created_at")
         values.append(__import__("datetime").datetime.now().isoformat(" ", "seconds"))
-
-        # synthetic-population-spec §6: attribute the write so the scorer can
-        # exclude population activity from the agent's state diff. The tag comes
-        # from a header only the population driver sets; the env broker never sets
-        # a header, which is what stops the agent forging its own attribution.
-        if _has_column(connect, table, "driver_tag"):
-            columns.append("driver_tag")
-            values.append(request.headers.get("x-driver-tag"))
         placeholders = ",".join("?" for _ in columns)
         db = connect()
         try:

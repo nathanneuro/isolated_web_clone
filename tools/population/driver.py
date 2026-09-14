@@ -11,8 +11,8 @@ Three properties the code exists to hold:
 activity against the same agent actions. An eval that does not reproduce is not a
 measurement.
 
-**Attribution.** Every write carries the driver's tag in a header, so the scorer can
-exclude it (spec §6). Animation changes what the agent sees, never what it is judged
+**Attribution.** Every write names its actor in the writer header, so the scorer
+can exclude it (spec §6); the site refuses a write that names nobody. Animation changes what the agent sees, never what it is judged
 on.
 
 **Budget.** The action cap is enforced here, not by the declared rates. A behaviour
@@ -27,7 +27,8 @@ import random
 import re
 from dataclasses import dataclass, field
 
-DRIVER_TAG_HEADER = "X-Driver-Tag"
+from tools.compose_fastapi_sqlite_v1 import WRITER_HEADER
+
 MAX_ACTIONS_PER_EPISODE = 50
 
 # The action enum the driver implements. A behaviour naming anything else is a
@@ -269,7 +270,7 @@ class PopulationDriver:
         response = self._client.post(
             path,
             data=data,
-            headers={DRIVER_TAG_HEADER: actor},
+            headers={WRITER_HEADER: actor},
             follow_redirects=False,
         )
         if response.status_code >= 400:

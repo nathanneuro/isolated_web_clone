@@ -18,6 +18,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from tools.compose_fastapi_sqlite_v1 import WRITER_HEADER
+
 # schemas/status-codes.toml [test_result]
 PASS, FAIL, SKIPPED, RUNNER_ERROR = 0, 1, 2, 3
 
@@ -90,7 +92,12 @@ def _run_one(client, test: dict, routes: dict, spec: dict, fixtures: dict) -> in
             path = _resolve(route["path"], fixtures, test)
             verify = next(q for q in spec["queries"] if q["id"] == test["verify_query"])
             before = _count_rows(client, verify, fixtures, test, spec, routes)
-            response = client.post(path, data=fixtures[test["input_fixture"]], follow_redirects=False)
+            # The suite's own writes are attributed too, so a go-live check can never be
+            # mistaken for agent activity by the scorer.
+            response = client.post(
+                path, data=fixtures[test["input_fixture"]],
+                headers={WRITER_HEADER: "golive"}, follow_redirects=False,
+            )
             if response.status_code not in (200, 302, 303):
                 return FAIL
             after = _count_rows(client, verify, fixtures, test, spec, routes)

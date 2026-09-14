@@ -128,7 +128,7 @@ class TestChoreography:
         d = driver(site, population=None, choreography=CHOREO)
         run(d)
         rows = sqlite3.connect(db).execute(
-            "SELECT body FROM replies WHERE driver_tag = 'a_announcer'"
+            "SELECT body FROM replies WHERE writer = 'a_announcer'"
         ).fetchall()
         assert [r[0] for r in rows] == ["the announcement"]
 
@@ -160,15 +160,18 @@ class TestConfinement:
         held = {type(v).__name__ for v in vars(d).values()}
         assert not {"Connection", "Cursor"} & held
 
-    def test_every_write_is_tagged(self, site):
+    def test_every_write_is_attributed_to_its_actor(self, site):
         _, _, db = site
         d = driver(site)
         run(d)
-        untagged = sqlite3.connect(db).execute(
-            "SELECT COUNT(*) FROM replies WHERE driver_tag IS NULL"
-        ).fetchone()[0]
+        writers = {
+            row[0] for row in sqlite3.connect(db).execute(
+                "SELECT DISTINCT writer FROM replies WHERE writer IS NOT NULL"
+            )
+        }
         assert d.counters.actions_performed > 0, "driver did nothing; test proves nothing"
-        assert untagged == 0, "a driver write was not attributed"
+        assert writers == {a.actor for a in d.performed}
+        assert "agent" not in writers
 
     def test_counter_names_are_integers(self, site):
         d = driver(site)
@@ -197,20 +200,18 @@ class TestScoreIsUnmoved:
         def episode(with_driver: bool) -> int:
             from fastapi.testclient import TestClient
 
-            env = factory(question)
-            db = str(factory.db_path_for(question))
-            if with_driver:
-                composed = compose_app(spec, factory.content_dir, Path(db))
-                client = TestClient(composed.app, base_url=f"http://{composed.hostname}")
-                client.__enter__()
-                d = PopulationDriver(
-                    client, spec, run_id="r", episode_id="e", site_id="site-000001",
-                    population=AMBIENT, pools=POOLS,
-                )
-                for step in range(3):
-                    d.tick(step)
-                assert d.counters.actions_performed > 0, "driver idle; test proves nothing"
-            env.observe()
-            return count_agent_rows(db, question.gold)
+            with factory.episode(question, f"driver_{with_driver}") as ep:
+                if with_driver:
+                    composed = compose_app(spec, factory.content_dir, ep.db_path)
+                    with TestClient(composed.app, base_url=f"http://{composed.hostname}") as client:
+                        d = PopulationDriver(
+                            client, spec, run_id="r", episode_id="e", site_id="site-000001",
+                            population=AMBIENT, pools=POOLS,
+                        )
+                        for step in range(3):
+                            d.tick(step)
+                    assert d.counters.actions_performed > 0, "driver idle; test proves nothing"
+                ep.env.observe()
+            return count_agent_rows(str(ep.db_path), question.gold)
 
         assert episode(False) == episode(True) == 0

@@ -317,9 +317,17 @@ the only writer.** Turn on a population driver and it is not — replies appear 
 the episode that the agent did not cause, and a naive state diff scores them as the
 agent's collateral damage.
 
-So the driver's writes must be **attributable and excluded**. Every row a driver
-creates is tagged with the episode's driver identity at insert time, and the scorer
-diffs only rows not so tagged. Concretely:
+So every write must be **attributed, and only the agent's credited**. Every table a
+mutation can reach carries a `writer` column, added by the composer so no
+reconstruction has to remember it. Every POST names its writer in a header: the env
+broker writes as `agent` (the agent itself cannot set a header, so it cannot forge
+this), a driver writes as its actor or cohort id, go-live's own checks write as
+`golive`, and seed rows are NULL. A POST that names nobody is refused with a 400.
+
+The scorer credits a row because it says `agent`, never because it failed to say
+anything else. This is the fail-closed direction: a driver that forgets its header
+produces a loud error and no row, rather than a quiet point for the agent.
+Concretely:
 
 - **State-diff reward** compares agent-attributable state against gold.
 - **Collateral-damage check** ignores driver-attributable changes, and *only* those.
@@ -386,8 +394,7 @@ account on another site has turned an injection in a forum into a corpus-wide re
    a real compute line item for something the agent mostly does not observe. Likely
    answer: animate on demand, only sites an episode actually touches, which is a few
    per episode and changes the cost by orders of magnitude.
-5. **Attribution tagging and the site schema.** §5 requires a driver-identity column
-   on every table a driver can write. That is structure, so it belongs in the site
-   spec, and the reconstruction agent has to emit it. Cleanest is for the composer to
-   add it automatically to any table named by a mutation, rather than asking 10^5
-   reconstructions to remember.
+5. **Attribution tagging and the site schema.** Resolved as §6 describes: the
+   composer adds the `writer` column to any table named by a mutation at compose
+   time, so the site spec does not carry it and 10^5 reconstructions do not have to
+   remember. The column exists only inside the serving sandbox.
