@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airgapped-web-env/schemas/population.schema.json",
+  "title": "Ambient population spec (synthetic-population-spec §4.3)",
+  "description": "Pipeline-signed, ships with the site. Identifiers, enums, and numbers. What a bot says lives in an encrypted content pool; there is no field in which a behaviour could carry a sentence.",
+
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$" },
+    "site_id": { "type": "string", "pattern": "^site-[0-9]{6}$" },
+    "population_id": { "type": "string", "pattern": "^site-[0-9]{6}-pop-r[0-9]{1,4}$" },
+    "blob_ref": { "type": "string", "pattern": "^content/[0-9a-f]{64}\\.blob$" },
+    "action": { "enum": ["form_submit", "vote", "edit_own", "delete_own"] },
+    "behaviour": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "action", "form", "route", "content_pool", "rate_per_hour"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "action": { "$ref": "#/$defs/action" },
+        "form": { "$ref": "#/$defs/id" },
+        "route": { "$ref": "#/$defs/id" },
+        "content_pool": { "$ref": "#/$defs/id" },
+        "rate_per_hour": { "type": "number", "minimum": 0, "maximum": 10000 },
+        "distribution": { "enum": ["poisson", "uniform"] },
+        "target_selector": { "$ref": "#/$defs/id" }
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "user_count", "behaviours"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "user_count": { "type": "integer", "minimum": 0, "maximum": 100000000 },
+        "behaviours": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/behaviour" } }
+      }
+    },
+    "content_pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "blob_ref", "row_count"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "blob_ref": { "$ref": "#/$defs/blob_ref" },
+        "row_count": { "type": "integer", "minimum": 1, "maximum": 100000000 }
+      }
+    }
+  },
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["population_id", "site_id", "cohorts", "content_pools"],
+  "properties": {
+    "population_id": { "$ref": "#/$defs/population_id" },
+    "site_id": { "$ref": "#/$defs/site_id" },
+    "cohorts": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/cohort" } },
+    "content_pools": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/content_pool" } }
+  }
+}

@@ -9,6 +9,7 @@ anything that compromises it gaining a write primitive the evaluated agent lacks
 from .driver import (
     MAX_ACTIONS_PER_EPISODE,
     Choreography,
+    ContentPool,
     DriverCounters,
     Population,
     PopulationDriver,
@@ -17,6 +18,7 @@ from .driver import (
 __all__ = [
     "MAX_ACTIONS_PER_EPISODE",
     "Choreography",
+    "ContentPool",
     "DriverCounters",
     "Population",
     "PopulationDriver",

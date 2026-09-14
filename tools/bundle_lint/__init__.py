@@ -9,5 +9,13 @@ could carry content would defeat the point.
 
 from .findings import Finding
 from .lint import lint_bundle, lint_spec, lint_suite
+from .population import lint_choreography, lint_population
 
-__all__ = ["Finding", "lint_bundle", "lint_spec", "lint_suite"]
+__all__ = [
+    "Finding",
+    "lint_bundle",
+    "lint_choreography",
+    "lint_population",
+    "lint_spec",
+    "lint_suite",
+]

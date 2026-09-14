@@ -62,12 +62,49 @@ class Cohort:
 
 
 @dataclass(frozen=True)
+class ContentPool:
+    """A pool's plaintext shape. The rows are an encrypted blob the driver is handed
+    decrypted by the serving sandbox; this records only that it exists and how big."""
+
+    id: str
+    blob_ref: str
+    row_count: int
+
+
+@dataclass(frozen=True)
 class Population:
     """Ambient liveness. Pipeline-signed, ships with the site."""
 
     population_id: str
     site_id: str
     cohorts: tuple[Cohort, ...] = ()
+    content_pools: tuple[ContentPool, ...] = ()
+
+    @classmethod
+    def from_document(cls, doc: dict) -> Population:
+        """Build from a document that has passed bundle_lint.lint_population.
+
+        Loading does not lint. A document that was never linted can still raise
+        here, but it cannot pass; the schema is the contract and this is a reader.
+        """
+        return cls(
+            population_id=doc["population_id"],
+            site_id=doc["site_id"],
+            cohorts=tuple(
+                Cohort(
+                    c["id"], c["user_count"],
+                    tuple(
+                        Behaviour(
+                            b["id"], b["action"], b["form"], b["route"], b["content_pool"],
+                            rate_per_hour=b["rate_per_hour"], distribution=b.get("distribution", "poisson"),
+                        )
+                        for b in c["behaviours"]
+                    ),
+                )
+                for c in doc["cohorts"]
+            ),
+            content_pools=tuple(ContentPool(p["id"], p["blob_ref"], p["row_count"]) for p in doc["content_pools"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -100,9 +137,31 @@ class Choreography:
     question_id: str
     actors: tuple[Actor, ...] = ()
     ambient: str = "suppress_for_actors"
+    content_pools: tuple[ContentPool, ...] = ()
 
     def __post_init__(self) -> None:
         assert self.ambient in ("suppress_for_actors", "suppress_all", "allow"), self.ambient
+
+    @classmethod
+    def from_document(cls, doc: dict) -> Choreography:
+        """Build from a document that has passed bundle_lint.lint_choreography."""
+        return cls(
+            choreography_id=doc["choreography_id"],
+            site_id=doc["site_id"],
+            question_id=doc["question_id"],
+            actors=tuple(
+                Actor(
+                    a["id"], a["user_ref"],
+                    tuple(
+                        ScriptStep(s["at_step"], s["action"], s["form"], s["route"], s["content_pool"], s["pool_row"])
+                        for s in a["script"]
+                    ),
+                )
+                for a in doc["actors"]
+            ),
+            ambient=doc["ambient"],
+            content_pools=tuple(ContentPool(p["id"], p["blob_ref"], p["row_count"]) for p in doc["content_pools"]),
+        )
 
 
 @dataclass
