@@ -29,6 +29,13 @@ Code that breaks one of them is a bug even if the tests pass.
 - Tests under `tests/`, mirroring `tools/`. `uv run pytest`.
 - Outputs (bundles, logs, run artifacts) go to `outputs/run_<ts>_<slug>/`, never a
   global dump directory. `out/` and `outputs/` are gitignored.
+- **Faker is for invented data only.** Use it in `example/synthetic-site/` and in test
+  fixtures. Never use it, or any generator, to produce seed DB rows in the real
+  pipeline: design-plan §3.2.2 requires scraped text verbatim, and `site-qa` Q3
+  (`QA-VERB-01`) exists to catch generated filler. A row that cannot be traced to a
+  source page is a defect.
+- Property-based tests and parser fuzzing use `hypothesis`. The specs require fuzz
+  harnesses for go-live (bundle-format-spec §8.5) and the egress reader.
 - Crypto: Ed25519 (signing), X25519 sealed box (key wrap), XChaCha20-Poly1305 (blobs),
   BLAKE3 (hashes). Use `pynacl` + `blake3`; do not hand-roll.
 - Parsers that touch untrusted bytes (receiver, egress-reader) get a fuzz harness in

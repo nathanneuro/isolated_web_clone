@@ -1,0 +1,28 @@
+# bundle-lint finding codes.
+#
+# bundle-format-spec §6 "Linting". These are what the receiver reports as status 14
+# and what a repair ticket carries in `lint_codes`. The rules are deliberately crude:
+# they are a tripwire against the pipeline drifting toward "just put the description
+# in a string," not a content classifier.
+
+registry_version = 1
+
+[lint]
+# Schema conformance
+"LINT-SCHEMA-01" = "document does not validate against its JSON Schema"
+"LINT-SCHEMA-02" = "unknown key not in the schema's allowed set"
+"LINT-SCHEMA-03" = "framework value not in the allowed set for the declared tier"
+
+# The structure/content split — the rules that keep content out of the spec
+"LINT-TEXT-01"   = "string value exceeds 64 characters"
+"LINT-TEXT-02"   = "string value contains more than 4 whitespace-separated words"
+
+# Referential integrity within the bundle
+"LINT-REF-01"    = "blob_ref does not resolve to a manifest entry"
+"LINT-REF-02"    = "blob_ref resolves to a manifest entry with an incompatible role"
+"LINT-REF-03"    = "identifier reference does not resolve within the document"
+"LINT-REF-04"    = "duplicate identifier"
+
+# Cross-document consistency between spec/site.json and tests/suite.json
+"LINT-XREF-01"   = "suite_id does not match the manifest's site_id and revision"
+"LINT-XREF-02"   = "test references a route, form, search, or query absent from the spec"

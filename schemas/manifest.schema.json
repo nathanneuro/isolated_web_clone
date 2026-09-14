@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://airgapped-web-env/schemas/manifest.schema.json",
+  "title": "Bundle manifest (bundle-format-spec §4, §9)",
+  "description": "The root of trust for a bundle and the only file the receiver reads before verifying a signature. Schema validity is necessary but never sufficient: the receiver validates here, then verifies manifest.sig, then the sequence high-water mark, then every file hash.",
+
+  "$defs": {
+    "blake3": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "key_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+    "site_id": { "type": "string", "pattern": "^site-[0-9]{6}$" },
+    "run_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+    "b64": { "type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$", "maxLength": 4096 },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+
+    "file_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "blake3", "bytes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(spec/site\\.json|tests/suite\\.json|content/[0-9a-f]{64}\\.blob|index/[0-9a-f]{64}\\.shard)$"
+        },
+        "blake3": { "$ref": "#/$defs/blake3" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 137438953472 },
+        "role": {
+          "enum": ["spec", "suite", "page_text", "db_seed", "template", "asset", "fixtures", "bm25_shard", "run_config"]
+        }
+      }
+    },
+
+    "content_key_wrapped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipient_key_id", "algorithm", "ciphertext_b64"],
+      "properties": {
+        "recipient_key_id": { "$ref": "#/$defs/key_id" },
+        "algorithm": { "const": "x25519-xsalsa20-poly1305" },
+        "ciphertext_b64": { "$ref": "#/$defs/b64" }
+      }
+    },
+
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "enum": ["start_run", "stop_run", "set_live", "retire", "rotate_verification_key", "set_sequence_floor"]
+        },
+        "run_id": { "$ref": "#/$defs/run_id" },
+        "config_ref": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+            "episodes": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+            "sites": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/site_id" } },
+            "bundle_id": { "type": "string", "pattern": "^site-[0-9]{6}-r[0-9]{1,4}$" },
+            "sequence_floor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "new_verification_key_b64": { "$ref": "#/$defs/b64" },
+            "new_signer_key_id": { "$ref": "#/$defs/key_id" }
+          }
+        }
+      }
+    }
+  },
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "bundle_id", "type", "sequence", "created_at", "signer_key_id", "files"],
+  "properties": {
+    "format_version": { "enum": ["0.1"] },
+    "bundle_id": { "type": "string", "pattern": "^(site-[0-9]{6}-r[0-9]{1,4}|cmd-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})$" },
+    "type": { "enum": ["site", "index_only", "command"] },
+    "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "created_at": { "$ref": "#/$defs/timestamp" },
+    "signer_key_id": { "$ref": "#/$defs/key_id" },
+    "site_id": { "$ref": "#/$defs/site_id" },
+    "revision": { "type": "integer", "minimum": 0, "maximum": 9999 },
+    "supersedes": { "type": "string", "pattern": "^site-[0-9]{6}-r[0-9]{1,4}$" },
+    "tier": { "enum": ["A", "B"] },
+    "content_key_wrapped": { "$ref": "#/$defs/content_key_wrapped" },
+    "command": { "$ref": "#/$defs/command" },
+    "files": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/file_entry" } }
+  },
+
+  "allOf": [
+    {
+      "description": "§4.4 — site and index_only bundles carry content and a wrapped key; they never carry a command.",
+      "if": { "properties": { "type": { "enum": ["site", "index_only"] } }, "required": ["type"] },
+      "then": {
+        "required": ["site_id", "revision", "tier", "content_key_wrapped"],
+        "properties": { "files": { "minItems": 1 } },
+        "not": { "required": ["command"] }
+      }
+    },
+    {
+      "description": "§9 — command bundles carry the command inline and have no content section at all.",
+      "if": { "properties": { "type": { "const": "command" } }, "required": ["type"] },
+      "then": {
+        "required": ["command"],
+        "properties": { "files": { "maxItems": 0 } },
+        "not": { "anyOf": [
+          { "required": ["content_key_wrapped"] },
+          { "required": ["site_id"] },
+          { "required": ["revision"] },
+          { "required": ["tier"] },
+          { "required": ["supersedes"] }
+        ]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+# Bundle status and receipt codes.
+#
+# bundle-format-spec §8.3. All outbound status is a small integer from this fixed
+# registry; no strings ever cross the diode. This file is the single source of truth,
+# compiled into the receiver, the worker, the go-live service, and the egress sender.
+#
+# Codes are permanent once assigned. Retiring a code means leaving a hole, never
+# reusing the number: a reader compiled against an older registry must not silently
+# reinterpret a value.
+
+registry_version = 1
+
+[status]
+0  = "ok"
+10 = "reject_layout"          # archive contains paths outside the fixed layout
+11 = "reject_signature"       # manifest.sig does not verify against the pinned key
+12 = "reject_replay"          # sequence <= persisted high-water mark
+13 = "reject_hash_mismatch"   # file hash or byte length disagrees with the manifest
+14 = "reject_lint"            # spec/ or tests/ failed bundle-lint
+20 = "worker_composed"        # composed, awaiting go-live
+21 = "worker_compose_failed"  # schema unsupported; worker failed closed
+30 = "golive_pass"
+31 = "golive_test_fail"       # followed by per-test codes
+32 = "golive_decrypt_fail"
+33 = "golive_timeout"
+40 = "live"
+41 = "retired"                # superseded by a later revision
+
+# Per-test result codes, returned as {test_id, result_code} pairs and nothing else.
+# Never output, never diffs, never screenshots (spec §7).
+[test_result]
+0 = "pass"
+1 = "fail"
+2 = "skipped"
+3 = "runner_error"

@@ -1,0 +1,53 @@
+# site-qa finding codes.
+#
+# The vocabulary `skills/site-qa/SKILL.md` writes into repair/ticket.json and
+# `skills/site-reconstruct/SKILL.md` reads back. Codes only; the ticket carries no
+# prose, by design. Each entry states what the reconstructor is expected to change.
+#
+# These are OUTSIDE-only codes. They never cross the diode: by the time a package is
+# bundled, QA has already approved it.
+
+registry_version = 1
+
+[qa.structural]          # Q1
+"QA-STRUCT-01" = "bundle-lint reported a finding; see lint_codes"
+"QA-STRUCT-02" = "blob_ref or fixture_blob_ref does not resolve to a file with a compatible role"
+"QA-STRUCT-03" = "orphan file in content/ referenced by no slot"
+
+[qa.leakage]             # Q2
+"QA-LEAK-01" = "identifier or route path derived from site text rather than schema vocabulary"
+"QA-LEAK-02" = "string reads as an instruction regardless of length; lint escape, human review"
+
+[qa.verbatim]            # Q3
+"QA-VERB-01" = "seed row cannot be traced verbatim to queue/extract; paraphrase or filler"
+"QA-VERB-02" = "seed ordering column does not reproduce the original listing order"
+
+[qa.affordance]          # Q4
+"QA-AFF-01" = "interactive element from the explorer session is missing in the replica"
+"QA-AFF-02" = "element present but non-functional and not declared dead_end"
+"QA-AFF-03" = "declared dead_end that the explorer exercised and the schema can express"
+
+[qa.task]                # Q5
+"QA-TASK-01" = "task possible on the original and in tier scope is impossible on the replica"
+
+[qa.isolation]           # Q6
+"QA-ISO-01" = "observed outbound request to a host other than the replica or /static/"
+"QA-ISO-02" = "template or asset contains an external fetch construct, whether or not it fired"
+
+[qa.fixtures]            # Q7
+"QA-FIX-01" = "fixture missing, regenerated, or implausible for its test kind"
+
+[qa.diff]                # Q8
+"QA-DIFF-01" = "change on a repair pass not attributable to a code in the previous ticket"
+
+[qa.suite]               # Q9
+"QA-SUITE-01" = "suite does not cover every route, mutation, search, and isolation check"
+
+[qa.meta]
+"QA-META-01" = "no existing code expresses this finding; qa-codes registry gap"
+
+# build.json flags, set by the reconstructor or by QA on approval or bounce.
+[flags]
+0 = "none"
+1 = "schema_gap"
+2 = "adversarial_content_suspicion"
