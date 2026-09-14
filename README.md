@@ -66,7 +66,8 @@ Everything in the repo exists to hold one of these:
 | [`docs/agent-sandbox-spec.md`](docs/agent-sandbox-spec.md) | Isolating the agent being trained from the inference and environment zones; escape detection and the automatic halt |
 | [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) | The wired developer station, hardware enforcement of the egress filter, bulk export |
 | [`docs/scale-and-storage-spec.md`](docs/scale-and-storage-spec.md) | What 10^5 sites changes: where site data lives, where a real database belongs, and why those are different places |
-| [`docs/synthetic-population-spec.md`](docs/synthetic-population-spec.md) | Millions of synthetic users and the bots that animate them, without letting a script cross the diode |
+| [`docs/synthetic-population-spec.md`](docs/synthetic-population-spec.md) | Millions of synthetic users: ambient liveness from the pipeline, and per-question eval choreography from the researcher |
+| [`docs/log-diode-spec.md`](docs/log-diode-spec.md) | The third one-way link: eval cluster to logging cluster, and why every byte in a log is untrusted input |
 | [`skills/site-reconstruct/SKILL.md`](skills/site-reconstruct/SKILL.md) | Outside agent: scrape → spec + templates + seed DB + tests |
 | [`skills/site-qa/SKILL.md`](skills/site-qa/SKILL.md) | Outside agent: adversarial checks before encryption |
 | [`skills/inside-worker/SKILL.md`](skills/inside-worker/SKILL.md) | Inside agent: verified bundle → deployment, structure only |
