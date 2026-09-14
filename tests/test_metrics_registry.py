@@ -17,7 +17,7 @@ import pytest
 from tools.bundle_lint.findings import SCHEMA_DIR
 
 DOCS = SCHEMA_DIR.parent / "docs"
-SPEC_DOCS = ("egress-metrics-spec.md", "agent-sandbox-spec.md")
+SPEC_DOCS = ("egress-metrics-spec.md", "agent-sandbox-spec.md", "log-diode-spec.md")
 ROW = re.compile(
     r"^\|\s*(\d+)\s*\|\s*`([^`]+)`\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$"
 )
@@ -94,4 +94,73 @@ def test_sandbox_ids_are_in_their_own_block(registry):
 
 
 def test_registry_version_bumped_for_the_sandbox_block(registry):
-    assert registry["registry_version"] >= 2
+    assert registry["registry_version"] >= 3
+
+
+def test_retired_ids_are_holes_not_absences(registry):
+    """§10: IDs are never reused. A reader on an older registry must not
+    reinterpret a value, so retirements are recorded rather than forgotten."""
+    retired = {int(k) for k in registry["retired"]}
+    assert retired == {53, 60, 61}, "the training-quantity holes"
+    assert retired.isdisjoint({int(k) for k in registry["metrics"]})
+
+
+def test_no_training_quantities_remain(registry):
+    """This environment evaluates; it does not train."""
+    names = {v["name"] for v in registry["metrics"].values()}
+    assert not (names & {"run.loss", "run.lr", "run.grad_norm"})
+
+
+def test_every_metric_declares_a_priority(registry):
+    for mid, metric in registry["metrics"].items():
+        assert metric["priority"] in {"always", "rotate"}, mid
+
+
+def test_always_set_cannot_crowd_out_the_frame(registry):
+    """§5: the always set is capped at half of MAX_METRICS, enforced at build."""
+    always = [m for m in registry["metrics"].values() if m["priority"] == "always"]
+    assert len(always) <= registry["max_metrics"] // 2
+
+
+def test_the_metrics_whose_absence_is_the_alarm_are_always_sent(registry):
+    """The failure this priority scheme exists to prevent: selecting by lowest ID
+    starves the highest block, which is the sandbox and log telemetry."""
+    by_name = {v["name"]: v for v in registry["metrics"].values()}
+    for name in (
+        "sandbox.escape_indicator",
+        "sandbox.watchdog_state",
+        "sandbox.detectors_live",
+        "log.sequence_gaps",
+        "log.writer_alive",
+        "sys.heartbeat",
+    ):
+        assert by_name[name]["priority"] == "always", name
+
+
+def test_rotation_interval_is_bounded(registry):
+    """Every rotating metric must be seen within a stated number of ticks."""
+    import math
+
+    metrics = registry["metrics"].values()
+    always = sum(1 for m in metrics if m["priority"] == "always")
+    rotate = sum(1 for m in metrics if m["priority"] == "rotate")
+    free = registry["max_metrics"] - always
+    assert free > 0
+    assert math.ceil(rotate / free) <= 4, "rotating metrics go stale for too long"
+
+
+def test_log_and_broker_blocks_are_registered(registry):
+    """Code in tools/brokers emits these; an unregistered metric cannot be sent."""
+    by_name = {v["name"]: v for v in registry["metrics"].values()}
+    from tools.brokers.action_broker import BrokerCounters
+
+    for name in BrokerCounters().as_metrics():
+        assert name in by_name, f"{name} emitted by the broker but not registered"
+    assert any(n.startswith("log.") for n in by_name)
+
+
+@pytest.mark.parametrize(("prefix", "lo", "hi"), [("sandbox.", 80, 89), ("log.", 90, 99), ("broker.", 100, 109)])
+def test_blocks_stay_in_their_id_ranges(registry, prefix, lo, hi):
+    for mid, metric in registry["metrics"].items():
+        if metric["name"].startswith(prefix):
+            assert lo <= int(mid) <= hi, (mid, metric["name"])

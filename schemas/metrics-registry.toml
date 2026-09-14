@@ -1,24 +1,40 @@
 # Egress metric registry.
 #
-# egress-metrics-spec.md §8 and agent-sandbox-spec.md §7. Compiled into both the
-# sender and the reader; names never travel on the wire, only IDs do. Adding or
-# removing a metric is a registry version bump plus a sender release plus a reader
-# release. IDs are NEVER reused: a reader compiled against an older registry must not
-# silently reinterpret a value.
+# Generated from the tables in docs/egress-metrics-spec.md §8,
+# docs/agent-sandbox-spec.md §7, and docs/log-diode-spec.md §7. Compiled into both
+# the sender and the reader; names never travel on the wire, only IDs do.
+#
+# IDs are NEVER reused. Adding or removing a metric is a registry version bump plus a
+# sender release plus a reader release. A reader compiled against an older registry
+# must not silently reinterpret a value, which is why [retired] below is a list of
+# holes rather than an absence.
 #
 # `scale` is the divisor the reader applies to the int32 wire value. `delta` means the
-# value is a change since the last frame rather than an absolute (frame flags bit 0).
+# value is a change since the last frame (frame flags bit 0).
+#
+# `priority` decides what rides in a frame when the registry is larger than one frame
+# holds, which it is. `always` metrics are in every frame -- they are the ones whose
+# ABSENCE is the alarm. Everything else rotates round-robin. Selecting by lowest ID
+# instead would starve whichever block was added last, and the newest block is the
+# log and sandbox telemetry, which is backwards.
 
-registry_version = 2
+registry_version = 3
 max_metrics = 64
 schema_version = 1
 
+# Holes. Training quantities from v1; this environment evaluates, it does not train.
+[retired]
+
+53 = "run.loss"
+60 = "run.lr"
+61 = "run.grad_norm"
 
 [metrics.1]
 name = "sys.heartbeat"
 unit = "count"
 scale = 1
 delta = true
+priority = "always"
 source = "sender"
 
 [metrics.2]
@@ -26,6 +42,7 @@ name = "sys.uptime_s"
 unit = "seconds"
 scale = 1
 delta = false
+priority = "rotate"
 source = "sender"
 
 [metrics.3]
@@ -33,6 +50,7 @@ name = "egress.dropped_metrics"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "sender"
 
 [metrics.4]
@@ -40,6 +58,7 @@ name = "egress.bad_writes"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "sender"
 
 [metrics.10]
@@ -47,6 +66,7 @@ name = "recv.bundles_ok"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "receiver"
 
 [metrics.11]
@@ -54,6 +74,7 @@ name = "recv.bundles_rejected"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "receiver"
 
 [metrics.12]
@@ -61,6 +82,7 @@ name = "recv.last_reject_code"
 unit = "enum"
 scale = 1
 delta = false
+priority = "always"
 source = "receiver"
 values = "enum (bundle spec §8.3)"
 
@@ -69,6 +91,7 @@ name = "recv.sequence_high_water"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "receiver"
 
 [metrics.20]
@@ -76,6 +99,7 @@ name = "worker.inbox_depth"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "worker"
 
 [metrics.21]
@@ -83,6 +107,7 @@ name = "worker.composed"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "worker"
 
 [metrics.22]
@@ -90,6 +115,7 @@ name = "worker.failed"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "worker"
 
 [metrics.23]
@@ -97,6 +123,7 @@ name = "worker.last_status_code"
 unit = "enum"
 scale = 1
 delta = false
+priority = "rotate"
 source = "worker"
 values = "enum"
 
@@ -105,6 +132,7 @@ name = "worker.last_subcode"
 unit = "enum"
 scale = 1
 delta = false
+priority = "rotate"
 source = "worker"
 values = "enum"
 
@@ -113,6 +141,7 @@ name = "golive.pass"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "go-live"
 
 [metrics.31]
@@ -120,6 +149,7 @@ name = "golive.fail"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "go-live"
 
 [metrics.32]
@@ -127,6 +157,7 @@ name = "golive.sandbox_count"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "go-live"
 
 [metrics.33]
@@ -134,6 +165,7 @@ name = "golive.last_duration_s"
 unit = "seconds"
 scale = 1
 delta = false
+priority = "rotate"
 source = "go-live"
 
 [metrics.40]
@@ -141,6 +173,7 @@ name = "sites.live"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "registry"
 
 [metrics.41]
@@ -148,6 +181,7 @@ name = "sites.retired"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "registry"
 
 [metrics.42]
@@ -155,6 +189,7 @@ name = "search.indexed_sites"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "search engine"
 
 [metrics.43]
@@ -162,6 +197,7 @@ name = "search.qps"
 unit = "scaled"
 scale = 100
 delta = false
+priority = "rotate"
 source = "search engine"
 
 [metrics.50]
@@ -169,7 +205,8 @@ name = "run.state"
 unit = "enum"
 scale = 1
 delta = false
-source = "run loop"
+priority = "always"
+source = "eval loop"
 values = "enum: 0 idle, 1 running, 2 paused, 3 done, 4 error"
 
 [metrics.51]
@@ -177,83 +214,119 @@ name = "run.step"
 unit = "count"
 scale = 1
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.52]
-name = "run.episodes"
+name = "run.episodes_done"
 unit = "count"
 scale = 1
 delta = true
-source = "run loop"
-
-[metrics.53]
-name = "run.loss"
-unit = "scaled"
-scale = 10000
-delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.54]
-name = "run.reward_mean"
+name = "run.score_mean"
 unit = "scaled"
 scale = 10000
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.55]
-name = "run.reward_passk"
+name = "run.score_passk"
 unit = "scaled"
 scale = 10000
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.56]
 name = "run.success_rate"
 unit = "scaled"
 scale = 10000
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.57]
 name = "run.minefield_hits"
 unit = "count"
 scale = 1
 delta = true
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.58]
 name = "run.collateral_flags"
 unit = "count"
 scale = 1
 delta = true
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
 [metrics.59]
 name = "run.tokens_per_s"
 unit = "count"
 scale = 1
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
-[metrics.60]
-name = "run.lr"
-unit = "scaled"
-scale = 100000000
+[metrics.62]
+name = "run.episodes_total"
+unit = "count"
+scale = 1
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
 
-[metrics.61]
-name = "run.grad_norm"
+[metrics.63]
+name = "run.episode_len_mean"
 unit = "scaled"
-scale = 10000
+scale = 100
 delta = false
-source = "run loop"
+priority = "rotate"
+source = "eval loop"
+
+[metrics.64]
+name = "run.episode_timeouts"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "eval loop"
+
+[metrics.65]
+name = "run.runner_errors"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "eval loop"
+
+[metrics.66]
+name = "run.sites_touched"
+unit = "count"
+scale = 1
+delta = false
+priority = "rotate"
+source = "eval loop"
+
+[metrics.67]
+name = "run.questions_attempted"
+unit = "count"
+scale = 1
+delta = false
+priority = "rotate"
+source = "eval loop"
 
 [metrics.70]
 name = "hw.gpu_util_pct"
 unit = "scaled"
 scale = 100
 delta = false
+priority = "rotate"
 source = "node agent"
 
 [metrics.71]
@@ -261,6 +334,7 @@ name = "hw.gpu_mem_pct"
 unit = "scaled"
 scale = 100
 delta = false
+priority = "rotate"
 source = "node agent"
 
 [metrics.72]
@@ -268,6 +342,7 @@ name = "hw.disk_free_pct"
 unit = "scaled"
 scale = 100
 delta = false
+priority = "rotate"
 source = "node agent"
 
 [metrics.73]
@@ -275,6 +350,7 @@ name = "hw.temp_c"
 unit = "scaled"
 scale = 10
 delta = false
+priority = "rotate"
 source = "node agent"
 
 [metrics.74]
@@ -282,6 +358,7 @@ name = "hw.node_count_ok"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "node agent"
 
 [metrics.80]
@@ -289,6 +366,7 @@ name = "sandbox.escape_indicator"
 unit = "enum"
 scale = 1
 delta = false
+priority = "always"
 source = "watchdog"
 values = "enum: 0 clean, 1 suspicious, 2 escape, 3 detector down"
 
@@ -297,6 +375,7 @@ name = "sandbox.first_detector_id"
 unit = "enum"
 scale = 1
 delta = false
+priority = "always"
 source = "watchdog"
 values = "enum: D1–D11 as 1–11, 0 none"
 
@@ -305,6 +384,7 @@ name = "sandbox.detectors_firing"
 unit = "count"
 scale = 1
 delta = false
+priority = "always"
 source = "watchdog"
 
 [metrics.83]
@@ -312,6 +392,7 @@ name = "sandbox.detectors_live"
 unit = "scaled"
 scale = 1
 delta = false
+priority = "always"
 source = "watchdog"
 
 [metrics.84]
@@ -319,6 +400,7 @@ name = "sandbox.watchdog_state"
 unit = "enum"
 scale = 1
 delta = false
+priority = "always"
 source = "watchdog"
 values = "enum: 0 clean, 1 halting, 2 halted"
 
@@ -327,6 +409,7 @@ name = "sandbox.halts_total"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "watchdog"
 
 [metrics.86]
@@ -334,6 +417,7 @@ name = "sandbox.denied_flows"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "D1"
 
 [metrics.87]
@@ -341,6 +425,7 @@ name = "sandbox.canary_hits"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "D3, D4"
 
 [metrics.88]
@@ -348,6 +433,7 @@ name = "sandbox.vmm_violations"
 unit = "count"
 scale = 1
 delta = true
+priority = "rotate"
 source = "D5, D6, D7"
 
 [metrics.89]
@@ -355,4 +441,134 @@ name = "sandbox.quarantined_ckpts"
 unit = "count"
 scale = 1
 delta = false
+priority = "rotate"
 source = "watchdog"
+
+[metrics.90]
+name = "log.records_ingested"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "log ingest"
+
+[metrics.91]
+name = "log.records_quarantined"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "log ingest"
+
+[metrics.92]
+name = "log.framing_rejects"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "log ingest"
+
+[metrics.93]
+name = "log.hmac_rejects"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "log ingest"
+
+[metrics.94]
+name = "log.sequence_gaps"
+unit = "count"
+scale = 1
+delta = true
+priority = "always"
+source = "log ingest"
+
+[metrics.95]
+name = "log.malware_findings"
+unit = "count"
+scale = 1
+delta = false
+priority = "always"
+source = "log ingest"
+
+[metrics.96]
+name = "log.sanitiser_strips"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "log ingest"
+
+[metrics.97]
+name = "log.storage_free_pct"
+unit = "scaled"
+scale = 100
+delta = false
+priority = "rotate"
+source = "logging cluster"
+
+[metrics.98]
+name = "log.oldest_unpromoted_s"
+unit = "seconds"
+scale = 1
+delta = false
+priority = "rotate"
+source = "log ingest"
+
+[metrics.99]
+name = "log.writer_alive"
+unit = "enum"
+scale = 1
+delta = false
+priority = "always"
+source = "log ingest"
+values = "enum: 0 down, 1 alive"
+
+[metrics.100]
+name = "broker.requests"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "action broker"
+
+[metrics.101]
+name = "broker.unparseable"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "action broker"
+
+[metrics.102]
+name = "broker.unknown_kind"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "action broker"
+
+[metrics.103]
+name = "broker.invalid_selector"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "action broker"
+
+[metrics.104]
+name = "broker.truncated_observations"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "action broker"
+
+[metrics.105]
+name = "broker.env_denied"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "env broker"

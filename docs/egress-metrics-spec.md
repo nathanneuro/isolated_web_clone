@@ -78,7 +78,16 @@ The sender is a single inside process, `egress-sender`, with:
 - Write access to the diode.
 - Nothing else. No filesystem access beyond its own config, no access to run artifacts, no LLM.
 
-It ticks on a fixed interval (default 60 s), reads the latest value per registered metric ID from the socket's ring buffer, builds one frame, HMACs it, sends it. If more metrics are pending than `MAX_METRICS`, it sends the lowest-numbered IDs and increments `egress.dropped_metrics` (itself a metric). It never sends more than one frame per tick.
+It ticks on a fixed interval (default 60 s), reads the latest value per registered metric ID from the socket's ring buffer, builds one frame, HMACs it, sends it. It never sends more than one frame per tick.
+
+**Selection when the registry exceeds `MAX_METRICS`.** The registry is larger than one frame holds, so the sender must choose. It must *not* choose by ID: "send the lowest-numbered IDs" starves whichever blocks were added last, and blocks get added at the end, so the newest subsystem is always the one that goes dark. That is backwards — the log channel's liveness metrics and the sandbox watchdog's state are the last things that should be dropped, and they sit at the top of the ID space.
+
+Instead every metric declares a `priority` in the registry:
+
+- `always` — included in every frame. These are the metrics whose *absence* is the alarm: watchdog state, escape indicator, detector liveness, log sequence gaps, heartbeat. The `always` set is capped at half of `MAX_METRICS` and that cap is enforced at registry build time, so it cannot silently grow until it crowds out everything else.
+- `rotate` — round-robin through the remaining slots across successive frames, in a fixed order derived from the registry. Every rotating metric is therefore sent at a known worst-case interval (`ceil(rotate_count / free_slots)` ticks) rather than at the mercy of its ID.
+
+`egress.dropped_metrics` counts anything that could not be placed at all, which under this scheme should be zero; a non-zero value means the `always` set has outgrown its cap and the registry is misbuilt.
 
 Inside components emit `(metric_id, value)` pairs to the socket. The socket accepts only that pair shape; a component that tries to write anything else gets its write dropped and `egress.bad_writes` incremented. There is no way for a component to add a metric ID that is not in the registry.
 
@@ -106,7 +115,7 @@ What this bounds: an inside process could, over a day, push roughly 370 KB to th
 
 Tightening knobs if ever needed, in order of cost: lower `MAX_METRICS`; lengthen the tick; narrow per-metric scales in the registry. None of these need a wire-format change.
 
-## 8. Metric registry v1
+## 8. Metric registry
 
 The registry is a versioned table checked into the repo and compiled into both sender and reader. Names never travel on the wire; only IDs do.
 
@@ -133,23 +142,34 @@ The registry is a versioned table checked into the repo and compiled into both s
 | 41 | `sites.retired` | count | delta | registry |
 | 42 | `search.indexed_sites` | count | | search engine |
 | 43 | `search.qps` | ×100 | | search engine |
-| 50 | `run.state` | enum: 0 idle, 1 running, 2 paused, 3 done, 4 error | | run loop |
-| 51 | `run.step` | count | | run loop |
-| 52 | `run.episodes` | count, delta | delta | run loop |
-| 53 | `run.loss` | ×10000 | | run loop |
-| 54 | `run.reward_mean` | ×10000 | | run loop |
-| 55 | `run.reward_passk` | ×10000 | | run loop |
-| 56 | `run.success_rate` | ×10000 | | run loop |
-| 57 | `run.minefield_hits` | count, delta | delta | run loop |
-| 58 | `run.collateral_flags` | count, delta | delta | run loop |
-| 59 | `run.tokens_per_s` | count | | run loop |
-| 60 | `run.lr` | ×1e8 | | run loop |
-| 61 | `run.grad_norm` | ×10000 | | run loop |
+| 50 | `run.state` | enum: 0 idle, 1 running, 2 paused, 3 done, 4 error | | eval loop |
+| 51 | `run.step` | count | | eval loop |
+| 52 | `run.episodes_done` | count, delta | delta | eval loop |
+| 54 | `run.score_mean` | ×10000 | | eval loop |
+| 55 | `run.score_passk` | ×10000 | | eval loop |
+| 56 | `run.success_rate` | ×10000 | | eval loop |
+| 57 | `run.minefield_hits` | count, delta | delta | eval loop |
+| 58 | `run.collateral_flags` | count, delta | delta | eval loop |
+| 59 | `run.tokens_per_s` | count | | eval loop |
+| 62 | `run.episodes_total` | count | | eval loop |
+| 63 | `run.episode_len_mean` | ×100 | | eval loop |
+| 64 | `run.episode_timeouts` | count, delta | delta | eval loop |
+| 65 | `run.runner_errors` | count, delta | delta | eval loop |
+| 66 | `run.sites_touched` | count | | eval loop |
+| 67 | `run.questions_attempted` | count | | eval loop |
 | 70 | `hw.gpu_util_pct` | ×100 | | node agent |
 | 71 | `hw.gpu_mem_pct` | ×100 | | node agent |
 | 72 | `hw.disk_free_pct` | ×100 | | node agent |
 | 73 | `hw.temp_c` | ×10 | | node agent |
 | 74 | `hw.node_count_ok` | count | | node agent |
+| 100 | `broker.requests` | count, delta | delta | action broker |
+| 101 | `broker.unparseable` | count, delta | delta | action broker |
+| 102 | `broker.unknown_kind` | count, delta | delta | action broker |
+| 103 | `broker.invalid_selector` | count, delta | delta | action broker |
+| 104 | `broker.truncated_observations` | count, delta | delta | action broker |
+| 105 | `broker.env_denied` | count, delta | delta | env broker |
+
+**Retired IDs.** `53` (`run.loss`), `60` (`run.lr`), `61` (`run.grad_norm`) were training quantities. This environment evaluates; it does not train, and the training loop is the reader's own. The IDs are retired rather than repurposed, per the rule above: a reader compiled against registry v2 must not reinterpret a v3 value. They are listed here so nobody fills the gap.
 
 `run_id` in the frame header distinguishes concurrent runs; metrics 50–61 are per-run, everything else is system-wide and sent with `run_id = 0`.
 
