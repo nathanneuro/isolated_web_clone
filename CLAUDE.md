@@ -43,5 +43,9 @@ Code that breaks one of them is a bug even if the tests pass.
 
 ## Status
 
-v0.1 draft. Specs are written; tools are being implemented bottom-up:
-schemas → bundle-lint → bundle-build → receiver → go-live → worker → egress.
+v0.2. Every spec'd component has a reference implementation under `tools/` with
+tests in `tests/`. See the README's Status section for what is deliberately
+reference-grade (in-process zones, a directory sandbox, five of eleven detectors,
+one driver action). When adding a component: register its metrics in
+`schemas/metrics-registry.toml` first, give it `as_metrics()`, and attach it to
+`Telemetry` in both demo scripts.

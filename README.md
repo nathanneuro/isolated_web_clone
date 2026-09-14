@@ -79,82 +79,85 @@ Read them in that order.
 ```
 docs/                     specs and design plan (above)
 skills/
-  site-reconstruct/       SKILL.md + references/ (spec-schema, test-kinds, template-subset, qa-codes, tiering)
-  site-qa/                SKILL.md + references/ (qa-codes, browser-harness)
-  inside-worker/          SKILL.md + references/ (patterns, retry-rules, worker-cli)
+  site-reconstruct/       outside agent: scrape -> spec + templates + seed DB + tests
+  site-qa/                outside agent: adversarial checks before encryption
+  inside-worker/          inside agent: verified bundle -> deployment, structure only
+                          (each SKILL.md names a references/ set that is not yet written)
 tools/
+  bundle_lint/            spec, suite, population, and choreography linter; runs outside
+                          before signing and inside on receipt
+  bundle_build/           outside: encrypt, rewrite handles, lint, sign; site and command bundles
   fake_demo_data_diode/   SIMULATED diode for demos and tests; replace with hardware
-  bundle_lint/            spec/test linter; runs outside before signing and inside on receipt
-  bundle_build/           assemble, encrypt, rewrite handles, lint, sign
   receiver/               inside: layout, signature, sequence, hashes, lint; dispatch
-  brokers/                the agent zone's only two reachable endpoints
+  worker/                 inside: sanity-check, classify, compose, go-live, register; codes only
+  compose_fastapi_sqlite_v1/  Tier A deterministic generator, plus dry-run classification
+  golive/                 inside: unwrap key, decrypt into sandbox, compose, run suite, codes
+  registry/               inside control plane: live revision per hostname, supersede, retire
+  command_executor/       inside: signed dev commands -> run control, registry, receiver trust
+  brokers/                the agent zone's only two reachable endpoints, and the sever gate
   inference_zone/         inside: model weights; reachable only via the action broker
-  golive/                 inside: decrypt into sandbox, compose, run suite, return codes
-  compose_fastapi_sqlite_v1/  Tier A deterministic generator
-  log_ingest/             logging cluster: record framing, sanitiser, quarantine tier
-  eval_harness/           Inspect AI task, solver, and state-diff scorer
-  population/             ambient liveness + eval choreography, deterministic
-  egress/                 numeric channel: frame, priority selection, sender, reader
-  bundle-build/           assemble, encrypt, lint, sign
-  recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
-  compose-fastapi-sqlite-v1/   Tier A deterministic generator
-  compose-static-v1/           Tier B deterministic generator
-  receiver/               inside: verify layout, signature, sequence, hashes, lint; dispatch
-  golive/                 inside: unwrap key, decrypt into sandbox, run suite, return codes
-  worker-cli/             inside: inbox, load, golive, register, retire
-  egress-sender/          inside: metrics socket → frames → diode
-  egress-reader/          outside: frames → local time-series store; includes fuzz harness
-  command-executor/       inside: signed command bundles → run loop
+  eval_harness/           Inspect AI task, solver, state-diff and reward scorers, run counters
+  population/             ambient liveness + eval choreography, deterministic, attributed
+  watchdog/               escape watchdog: detectors D1 D2 D3 D5, liveness, one-way halt
+  egress/                 numeric channel: frame, registry, sender, reader, metrics socket
+  log_ingest/             log diode: record writer, framing, sanitiser, quarantine tier
 schemas/
   site.schema.json        site spec JSON Schema
   suite.schema.json       test suite JSON Schema
-  manifest.schema.json    bundle manifest JSON Schema
+  manifest.schema.json    bundle manifest JSON Schema, including command params
+  population.schema.json  ambient population spec
+  choreography.schema.json  eval choreography
   metrics-registry.toml   egress metric registry (compiled into sender and reader)
+  lint-codes.toml         bundle-lint finding codes
   qa-codes.toml           QA finding codes
-  status-codes.toml       bundle status and subcode registry
+  status-codes.toml       bundle status, test result, and command codes
 example/
   synthetic_site/         a small invented forum board; generate_content.py builds its
                           seed DB, BM25 shard, and fixtures deterministically
 scripts/
+  run_demo.py             ingress pipeline end to end, plus a command and the metrics channel
+  run_eval_demo.py        an eval with the watchdog and both outbound channels
   fetch_demo_models.py    fetch the two sub-1B demo models (runs OUTSIDE the airgap)
+tests/                    one file per tool; `uv run pytest`
 models/                   gitignored. Weights are provisioned physically, never by diode.
 ```
 
 ## Quick start (single machine, no diode)
 
-The walkthrough runs both sides on one host with the diode replaced by a directory copy. This exercises every component except the hardware.
+Both scripts run both sides on one host with the diode replaced by a directory copy.
+This exercises every component except the hardware.
 
 ```
-make example            # reconstruct + qa + build the synthetic site → ./out/bundles/
-make inside-up          # start receiver, go-live, worker, search engine, egress-sender in containers
-make push               # run tools/fake_demo_data_diode in place of the hardware
-make status             # tail egress-reader output
+uv run python example/synthetic_site/generate_content.py   # once: invent the example site
+uv run python scripts/run_demo.py                          # ingress: build -> diode -> receiver
+                                                           #   -> worker -> go-live -> registry,
+                                                           #   a signed command, metrics back out
+uv run python scripts/fetch_demo_models.py                 # once, OUTSIDE: two sub-1B models
+uv run --group demo python scripts/run_eval_demo.py        # an eval through the brokers, with
+                                                           #   the watchdog and both channels
 ```
 
-Two scripts run today without a Makefile:
-
-```
-uv run python scripts/run_demo.py                      # build -> diode -> receiver -> go-live
-uv run --group demo python scripts/run_eval_demo.py    # an eval against the cloned web
-```
-
-The diode in that quick start is [`tools/fake_demo_data_diode/`](tools/fake_demo_data_diode/),
+The diode in both is [`tools/fake_demo_data_diode/`](tools/fake_demo_data_diode/),
 and the name is literal. It is a Python process moving files between two directories
 on one host; it provides **no isolation whatsoever** and exists so the pipeline can be
 run and tested without buying hardware. What it does provide is the *protocol* a real
-diode imposes — no acknowledgments, no back-channel, no retransmit requests,
+diode imposes: no acknowledgments, no back-channel, no retransmit requests,
 fail-closed on malformed input, plus the drop and bit-flip failure modes a plain file
 copy never produces. Components on both sides are written against those constraints,
 so swapping in real one-way hardware changes nothing but the endpoints. Read the
 package docstring before deploying anything.
 
-Expected: one bundle received, composed, passed go-live, registered; `sites.live = 1` on the dashboard.
+Expected from `run_demo.py`: one bundle received, composed, passed go-live,
+registered; a `start_run` applied; `sites.live = 1` and `run.state = 1` on the
+dev-side store. Expected from `run_eval_demo.py`: two episodes scored, their
+trajectories promoted on the logging side, and then a canary trip that halts the
+run and flips `sandbox.escape_indicator` on the dashboard.
 
 ## What is deliberately not here
 
 - **The scraper and explorer.** They touch the real internet and are the part most likely to need per-deployment judgement about robots, terms, and rate limits. `site-reconstruct` documents the input layout they must produce.
 - **Any scraped content.** The example site is invented.
-- **Training code.** The run loop is yours; `command-executor` and `egress-sender` document the interfaces it plugs into.
+- **Training code.** The run loop is yours; `tools/command_executor` (`RunControl`) and `tools/egress` (`Telemetry`) are the interfaces it plugs into.
 - **Physical controls.** No removable media inside, terminal is display-and-keyboard only, two-person export procedure, and the FPGA egress filter that makes the rate cap real rather than advisory. [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) specifies these; code cannot enforce them.
 - **Diode hardware.** `tools/fake_demo_data_diode/` simulates the protocol so the pipeline runs on one machine. It is not a diode and does not pretend to be.
 
@@ -168,4 +171,19 @@ Apache-2.0. See [`LICENSE`](LICENSE).
 
 ## Status
 
-Draft specs, v0.1. Reference files under `skills/*/references/` and the tools under `tools/` are the next pieces to land. Issues and pull requests welcome, especially findings against the invariants above.
+v0.2. Every component the specs name has a reference implementation under `tools/`
+with tests, except the ones listed under "What is deliberately not here". The
+remaining gaps are known and are not the design:
+
+- The zone split is in-process. The brokers are Python objects, not vsock endpoints,
+  and the go-live sandbox is a directory, not a container or microVM.
+- Detectors D4 and D6 to D10 are not implemented. D1, D2, D3, D5, and D11 are.
+- The population driver implements `form_submit`; `vote`, `edit_own`, and
+  `delete_own` need update and delete mutation ops in the composer first.
+- Tier B (`compose-static-v1`), `recon-check`, and the `references/` files each
+  skill names are not written.
+- There is no corpus-wide search engine; each site serves its own BM25 shard.
+- The receiver's trust set is extended in memory by `rotate_verification_key`; a
+  deployment loads it from the control plane at start.
+
+Issues and pull requests welcome, especially findings against the invariants above.
