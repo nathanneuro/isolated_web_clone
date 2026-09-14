@@ -65,7 +65,8 @@ skills/
   site-qa/                SKILL.md + references/ (qa-codes, browser-harness)
   inside-worker/          SKILL.md + references/ (patterns, retry-rules, worker-cli)
 tools/
-  bundle-lint/            spec/test linter; runs outside before signing and inside on receipt
+  fake_demo_data_diode/   SIMULATED diode for demos and tests; replace with hardware
+  bundle_lint/            spec/test linter; runs outside before signing and inside on receipt
   bundle-build/           assemble, encrypt, lint, sign
   recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
   compose-fastapi-sqlite-v1/   Tier A deterministic generator
@@ -95,9 +96,19 @@ The walkthrough runs both sides on one host with the diode replaced by a directo
 ```
 make example            # reconstruct + qa + build the synthetic site → ./out/bundles/
 make inside-up          # start receiver, go-live, worker, search engine, egress-sender in containers
-make push               # copy bundles into the receiver's inbox (stands in for the diode)
+make push               # run tools/fake_demo_data_diode in place of the hardware
 make status             # tail egress-reader output
 ```
+
+The diode in that quick start is [`tools/fake_demo_data_diode/`](tools/fake_demo_data_diode/),
+and the name is literal. It is a Python process moving files between two directories
+on one host; it provides **no isolation whatsoever** and exists so the pipeline can be
+run and tested without buying hardware. What it does provide is the *protocol* a real
+diode imposes — no acknowledgments, no back-channel, no retransmit requests,
+fail-closed on malformed input, plus the drop and bit-flip failure modes a plain file
+copy never produces. Components on both sides are written against those constraints,
+so swapping in real one-way hardware changes nothing but the endpoints. Read the
+package docstring before deploying anything.
 
 Expected: one bundle received, composed, passed go-live, registered; `sites.live = 1` on the dashboard.
 
