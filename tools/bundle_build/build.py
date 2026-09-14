@@ -256,3 +256,46 @@ def _b64(raw: bytes) -> str:
     import base64
 
     return base64.b64encode(raw).decode()
+
+
+def build_command_bundle(
+    output_dir: Path,
+    *,
+    identity: SigningIdentity,
+    bundle_id: str,
+    sequence: int,
+    created_at: str,
+    command: dict,
+) -> Path:
+    """Build one signed command bundle (§9). Dev-signed, no content section.
+
+    `command` is `{op, run_id?, config_ref?, params?}` and is validated by the
+    receiver's manifest schema and again by the executor's per-op schema; nothing
+    here relaxes either. It is deliberately impossible to attach files.
+    """
+    if identity.role is not KeyRole.DEV:
+        raise BuildError(
+            f"command bundles must be signed with a dev key, got {identity.role.value}"
+        )
+    staging = Path(output_dir) / f"{bundle_id}.bundle"
+    if staging.exists():
+        raise BuildError(f"{staging} already exists; a command is immutable once signed")
+    staging.mkdir(parents=True)
+    manifest = {
+        "format_version": FORMAT_VERSION,
+        "bundle_id": bundle_id,
+        "type": "command",
+        "sequence": sequence,
+        "created_at": created_at,
+        "signer_key_id": identity.key_id,
+        "command": command,
+        "files": [],
+    }
+    manifest_bytes = canonical_json(manifest)
+    (staging / "manifest.json").write_bytes(manifest_bytes)
+    (staging / "manifest.sig").write_bytes(identity.sign(manifest_bytes))
+    archive = Path(output_dir) / f"{bundle_id}.bundle.tar"
+    with tarfile.open(archive, "w") as tar:
+        for name in ("manifest.json", "manifest.sig"):
+            tar.add(staging / name, arcname=name, recursive=False)
+    return archive

@@ -60,7 +60,9 @@
             "bundle_id": { "type": "string", "pattern": "^site-[0-9]{6}-r[0-9]{1,4}$" },
             "sequence_floor": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
             "new_verification_key_b64": { "$ref": "#/$defs/b64" },
-            "new_signer_key_id": { "$ref": "#/$defs/key_id" }
+            "new_signer_key_id": { "$ref": "#/$defs/key_id" },
+            "new_signer_role": { "enum": ["pipeline", "dev"] },
+            "signer_key_id": { "$ref": "#/$defs/key_id" }
           }
         }
       }

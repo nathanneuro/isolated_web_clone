@@ -8,7 +8,7 @@
 # reusing the number: a reader compiled against an older registry must not silently
 # reinterpret a value.
 
-registry_version = 1
+registry_version = 2
 
 [status]
 0  = "ok"
@@ -33,3 +33,14 @@ registry_version = 1
 1 = "fail"
 2 = "skipped"
 3 = "runner_error"
+
+# Command execution codes, emitted by the command executor (bundle-format-spec §9)
+# for every command bundle the receiver dispatched. A command is applied whole or
+# not at all; there is no partial application and no retry.
+[command]
+0  = "applied"
+50 = "reject_unknown_op"        # op not in the executor's enum
+51 = "reject_params"            # params fail the per-op schema or the lint caps
+52 = "reject_signer_role"       # op requires a signer role this key does not hold
+53 = "reject_target"            # run, site, revision, or signer named does not exist
+54 = "reject_state"             # target exists but is not in a state the op applies to

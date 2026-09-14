@@ -88,6 +88,23 @@ class SiteRegistry:
         self._flush()
         return record
 
+    def set_live(self, bundle_id: str) -> SiteRecord:
+        """Return a retired revision to service, retiring whatever holds its hostname.
+
+        Command-driven only (bundle-format-spec §9 `set_live`): the way a human rolls
+        back a revision that passed go-live but turned out wrong.
+        """
+        old = self._records[bundle_id]
+        assert old.status is SiteStatus.RETIRED, f"{bundle_id} is not retired"
+        holder = self.live_for_hostname(old.hostname)
+        if holder is not None:
+            self._retire(holder.bundle_id)
+        self._records[bundle_id] = SiteRecord(
+            old.site_id, old.revision, old.bundle_id, old.hostname, old.deployment, SiteStatus.LIVE
+        )
+        self._flush()
+        return self._records[bundle_id]
+
     def retire(self, bundle_id: str) -> SiteRecord:
         assert bundle_id in self._records, bundle_id
         self._retire(bundle_id)
