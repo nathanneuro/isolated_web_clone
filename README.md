@@ -89,6 +89,9 @@ tools/
   receiver/               inside: layout, signature, sequence, hashes, lint; dispatch
   brokers/                the agent zone's only two reachable endpoints
   inference_zone/         inside: model weights; reachable only via the action broker
+  golive/                 inside: decrypt into sandbox, compose, run suite, return codes
+  compose_fastapi_sqlite_v1/  Tier A deterministic generator
+  log_ingest/             logging cluster: record framing, sanitiser, quarantine tier
   bundle-build/           assemble, encrypt, lint, sign
   recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
   compose-fastapi-sqlite-v1/   Tier A deterministic generator

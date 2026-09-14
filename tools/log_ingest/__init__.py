@@ -12,6 +12,7 @@ separate display copy, and held in quarantine until checked.
 
 from .frame import MAX_PAYLOAD, RECORD_HEADER_BYTES, LogRecord, RecordReject, parse_record
 from .frame import Severity, Stream, build_record
+from .quarantine import IngestCounters, IngestReport, NullScanner, QuarantineTier, Scanner
 from .sanitise import is_display_safe, sanitise_for_display
 
 __all__ = [
@@ -21,6 +22,11 @@ __all__ = [
     "RecordReject",
     "Severity",
     "Stream",
+    "IngestCounters",
+    "IngestReport",
+    "NullScanner",
+    "QuarantineTier",
+    "Scanner",
     "build_record",
     "is_display_safe",
     "parse_record",
