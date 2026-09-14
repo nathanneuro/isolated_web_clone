@@ -112,6 +112,10 @@ Expected: one bundle received, composed, passed go-live, registered; `sites.live
 
 This design defends against the common leak paths: an agent with network access, a model reading injected content with authority, a log or telemetry pipeline that carries strings, unsigned or replayed instructions, and content tampering in transit. It bounds but does not eliminate low-bandwidth signalling from inside to the dev reader (about 34 bits/s, to a host with no internet path). It does not defend against a compromised terminal room, a compromised dev reader host, compromised diode firmware, or an outside pipeline that signs a malicious structure. Those are handled by physical controls, host hardening, vendor trust, and the outside QA loop respectively. It is a step up from current practice, not a claim of a sealed system.
 
+## License
+
+Apache-2.0. See [`LICENSE`](LICENSE).
+
 ## Status
 
 Draft specs, v0.1. Reference files under `skills/*/references/` and the tools under `tools/` are the next pieces to land. Issues and pull requests welcome, especially findings against the invariants above.
