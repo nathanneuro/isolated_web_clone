@@ -38,6 +38,7 @@ class Direction(Enum):
 
     INGRESS = "ingress"  # outside -> inside: bundles and signed command bundles
     EGRESS = "egress"  # inside -> outside: fixed-size metric frames only
+    LOG = "log"  # eval cluster -> logging cluster: framed records (log-diode-spec)
 
 
 @dataclass

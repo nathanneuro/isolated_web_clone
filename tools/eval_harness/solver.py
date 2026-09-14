@@ -15,6 +15,7 @@ from __future__ import annotations
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from tools.brokers import ActionBroker, ActionKind, observation_from
+from tools.log_ingest import LogEmitter, Severity, Stream
 
 from .question import EvalQuestion
 
@@ -24,6 +25,7 @@ def broker_web_agent(
     action_broker: ActionBroker,
     env_factory,
     questions: dict[str, EvalQuestion],
+    emitter: LogEmitter | None = None,
 ) -> Solver:
     """Drive one episode per sample through the two brokers.
 
@@ -78,6 +80,13 @@ def broker_web_agent(
         }
         state.metadata["db_path"] = str(episode.db_path)
         state.output.completion = answer
+        if emitter is not None:
+            # The trajectory leaves the eval cluster only as a framed, HMAC'd record
+            # with an opaque payload (log-diode-spec §4). It is untrusted on arrival.
+            emitter.emit_json(
+                Stream.TRAJECTORY, Severity.INFO,
+                {"sample": state.sample_id, "epoch": state.epoch, "transcript": transcript},
+            )
         return state
 
     return solve

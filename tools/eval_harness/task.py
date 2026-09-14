@@ -82,6 +82,7 @@ def build_task(
     action_broker,
     env_factory: SiteEnvFactory,
     name: str = "isolated-web-clone",
+    emitter=None,
 ) -> Task:
     by_id = {q.id: q for q in questions}
     assert len(by_id) == len(questions), "duplicate question ids"
@@ -91,7 +92,7 @@ def build_task(
     )
     return Task(
         dataset=dataset,
-        solver=broker_web_agent(action_broker, env_factory, by_id),
+        solver=broker_web_agent(action_broker, env_factory, by_id, emitter),
         scorer=state_diff_scorer(by_id),
         name=name,
     )

@@ -211,10 +211,11 @@ class ReferenceHaltActions:
     agent loop can act at all. A deployment replaces this with one that stops the
     VMM, and keeps the same four steps."""
 
-    def __init__(self, gate, run_control, preserve_dir: Path) -> None:
+    def __init__(self, gate, run_control, preserve_dir: Path, emitter=None) -> None:
         self._gate = gate
         self._run = run_control
         self.preserve_dir = Path(preserve_dir)
+        self._emitter = emitter
 
     def freeze(self) -> None:
         self._gate.sever()
@@ -228,3 +229,7 @@ class ReferenceHaltActions:
     def preserve(self, state: dict) -> None:
         self.preserve_dir.mkdir(parents=True, exist_ok=True)
         (self.preserve_dir / f"halt_{int(state['time'])}.json").write_text(json.dumps(state, indent=1))
+        if self._emitter is not None:
+            from tools.log_ingest import Severity, Stream
+
+            self._emitter.emit_json(Stream.WATCHDOG, Severity.CRITICAL, state)

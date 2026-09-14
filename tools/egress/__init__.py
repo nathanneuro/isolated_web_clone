@@ -16,17 +16,21 @@ from .frame import FRAME_BYTES, MAX_METRICS, Frame, FrameReject, MetricValue, bu
 from .reader import EgressReader, ReaderCounters
 from .registry import Registry, load_registry
 from .sender import EgressSender
+from .telemetry import FrameSpool, ReadingStore, Telemetry
 
 __all__ = [
     "FRAME_BYTES",
     "MAX_METRICS",
     "EgressReader",
     "EgressSender",
+    "FrameSpool",
     "Frame",
     "FrameReject",
     "MetricValue",
     "ReaderCounters",
+    "ReadingStore",
     "Registry",
+    "Telemetry",
     "build_frame",
     "load_registry",
     "parse_frame",

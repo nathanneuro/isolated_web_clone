@@ -12,6 +12,7 @@ separate display copy, and held in quarantine until checked.
 
 from .frame import MAX_PAYLOAD, RECORD_HEADER_BYTES, LogRecord, RecordReject, parse_record
 from .frame import Severity, Stream, build_record
+from .emitter import KNOWN_SOURCES, LogEmitter, LogSource, ingest_directory
 from .quarantine import IngestCounters, IngestReport, NullScanner, QuarantineTier, Scanner
 from .sanitise import is_display_safe, sanitise_for_display
 
@@ -23,6 +24,10 @@ __all__ = [
     "Severity",
     "Stream",
     "IngestCounters",
+    "KNOWN_SOURCES",
+    "LogEmitter",
+    "LogSource",
+    "ingest_directory",
     "IngestReport",
     "NullScanner",
     "QuarantineTier",

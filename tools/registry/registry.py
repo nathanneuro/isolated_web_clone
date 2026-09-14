@@ -58,6 +58,10 @@ class SiteRegistry:
         live = sum(1 for r in self._records.values() if r.status is SiteStatus.LIVE)
         return RegistryCounters(live=live, retired=len(self._records) - live)
 
+    def as_metrics(self) -> dict[str, int]:
+        """Attach the registry itself to telemetry; `counters` is a snapshot."""
+        return self.counters.as_metrics()
+
     def register(
         self,
         *,

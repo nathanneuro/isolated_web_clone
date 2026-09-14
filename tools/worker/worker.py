@@ -11,6 +11,7 @@ from tools.bundle_build.build import find_slots
 from tools.compose_fastapi_sqlite_v1 import classify_spec
 from tools.golive import GoLiveResult, GoLiveService
 from tools.golive.runner import RUNNER_ERROR
+from tools.log_ingest import Severity, Stream
 from tools.registry import SiteRegistry
 
 MAX_ATTEMPTS = 3
@@ -86,6 +87,7 @@ class Worker:
         *,
         chooser: PatternChooser | None = None,
         max_attempts: int = MAX_ATTEMPTS,
+        emitter=None,
     ) -> None:
         assert 1 <= max_attempts <= MAX_ATTEMPTS, max_attempts
         self.inbox = Path(inbox)
@@ -97,6 +99,7 @@ class Worker:
         self.max_attempts = max_attempts
         self.counters = WorkerCounters()
         self.emissions: list[StatusEmission] = []
+        self._emitter = emitter
 
     # -- inbox -----------------------------------------------------------------
 
@@ -253,4 +256,6 @@ class Worker:
         self.emissions.append(emission)
         self.counters.last_status_code = int(status)
         self.counters.last_subcode = subcode
+        if self._emitter is not None:
+            self._emitter.emit_json(Stream.WORKER, Severity.INFO, {**vars(emission), "status_code": int(status)})
         return emission

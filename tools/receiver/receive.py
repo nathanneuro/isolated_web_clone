@@ -75,6 +75,19 @@ class Receipt:
         return self.status is Status.OK
 
 
+@dataclass
+class ReceiverCounters:
+    """metrics-registry block 10-13. Integers; the receipt's detail never leaves."""
+
+    bundles_ok: int = 0
+    bundles_rejected: int = 0
+    last_reject_code: int = 0
+    sequence_high_water: int = 0
+
+    def as_metrics(self) -> dict[str, int]:
+        return {f"recv.{k}": v for k, v in vars(self).items()}
+
+
 class Receiver:
     """Verifies arriving bundles and dispatches the ones that survive.
 
@@ -99,6 +112,7 @@ class Receiver:
         for directory in (self.state_dir, self.worker_inbox, self.command_inbox, self.quarantine):
             directory.mkdir(parents=True, exist_ok=True)
         self._sequence_file = self.state_dir / "sequence-high-water.json"
+        self.counters = ReceiverCounters()
 
     # -- sequence high-water mark (§4.2) ------------------------------------
 
@@ -128,14 +142,23 @@ class Receiver:
 
         layout = self._unpack(archive_path, unpacked)
         if layout is not None:
-            return self._quarantine(archive_path, layout)
+            return self._count(self._quarantine(archive_path, layout))
 
         receipt = self._verify(unpacked)
         if not receipt.accepted:
             _rmtree(unpacked)
-            return self._quarantine(archive_path, receipt)
+            return self._count(self._quarantine(archive_path, receipt))
 
         self._dispatch(unpacked)
+        return self._count(receipt)
+
+    def _count(self, receipt: Receipt) -> Receipt:
+        if receipt.accepted:
+            self.counters.bundles_ok += 1
+            self.counters.sequence_high_water = max(self._high_water().values(), default=0)
+        else:
+            self.counters.bundles_rejected += 1
+            self.counters.last_reject_code = int(receipt.status)
         return receipt
 
     def _unpack(self, archive_path: Path, target: Path) -> Receipt | None:

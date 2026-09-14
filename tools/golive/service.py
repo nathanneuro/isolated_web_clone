@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import json
 import shutil
+import time
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
@@ -66,6 +67,24 @@ class GoLiveResult:
         }
 
 
+@dataclass
+class GoLiveCounters:
+    """metrics-registry block 30-33."""
+
+    pass_: int = 0
+    fail: int = 0
+    sandbox_count: int = 0
+    last_duration_s: int = 0
+
+    def as_metrics(self) -> dict[str, int]:
+        return {
+            "golive.pass": self.pass_,
+            "golive.fail": self.fail,
+            "golive.sandbox_count": self.sandbox_count,
+            "golive.last_duration_s": self.last_duration_s,
+        }
+
+
 class GoLiveService:
     """Holds the go-live private key. The worker cannot read from this process."""
 
@@ -75,6 +94,7 @@ class GoLiveService:
         self._box = SealedBox(PrivateKey(raw))
         self.sandbox_root = Path(sandbox_root)
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
+        self.counters = GoLiveCounters()
 
     def go_live(self, deployment_dir: Path) -> GoLiveResult:
         deployment_dir = Path(deployment_dir)
@@ -84,14 +104,22 @@ class GoLiveService:
             shutil.rmtree(sandbox)
         sandbox.mkdir(parents=True)
 
+        started = time.monotonic()
         try:
-            return self._go_live(deployment_dir, manifest, sandbox)
+            result = self._go_live(deployment_dir, manifest, sandbox)
         except CryptoError as exc:
             shutil.rmtree(sandbox, ignore_errors=True)
-            return GoLiveResult(GoLiveStatus.DECRYPT_FAIL, detail=str(exc))
+            result = GoLiveResult(GoLiveStatus.DECRYPT_FAIL, detail=str(exc))
         except ComposeError as exc:
             shutil.rmtree(sandbox, ignore_errors=True)
-            return GoLiveResult(GoLiveStatus.COMPOSE_UNSUPPORTED, detail=str(exc))
+            result = GoLiveResult(GoLiveStatus.COMPOSE_UNSUPPORTED, detail=str(exc))
+        self.counters.last_duration_s = int(time.monotonic() - started)
+        if result.status is GoLiveStatus.PASS:
+            self.counters.pass_ += 1
+        else:
+            self.counters.fail += 1
+        self.counters.sandbox_count = sum(1 for p in self.sandbox_root.iterdir() if p.is_dir())
+        return result
 
     def _go_live(self, deployment_dir: Path, manifest: dict, sandbox: Path) -> GoLiveResult:
         wrapped = base64.b64decode(manifest["content_key_wrapped"]["ciphertext_b64"])
