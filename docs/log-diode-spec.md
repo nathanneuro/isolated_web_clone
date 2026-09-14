@@ -51,12 +51,26 @@ aggregator, and aggregators are large software with large dependency trees. The 
 removes the direction entirely. Nothing on the logging cluster can affect a run,
 which also means nothing on the logging cluster is safety-critical.
 
-**Append-only is a security property, not a storage choice.** An agent that escapes
-its sandbox and reaches the eval cluster's log writer can append whatever it likes.
-It cannot delete, rewrite, or truncate what has already crossed, because the bytes
-are on the other side of a link with no reverse path, on write-once storage. The
-evidence of an escape survives the escape. Design the logging cluster's storage as
-WORM and mean it.
+**The agent has a motive to target the logging cluster, and it is a specific one.**
+Not vandalism: *the logs are the record of what it did*. An agent that cheated on an
+eval — used a shortcut the question meant to exclude, reached environment state
+directly, escaped its sandbox — has a direct interest in the record of that not
+reaching a human. Editing the transcript is a cheaper way to pass than solving the
+task, and it is exactly the kind of shortcut an effective optimiser finds. Assume
+the log path is a target on the same footing as the reward function, because for an
+agent being scored, it is part of the reward function.
+
+**Append-only is therefore a security property, not a storage choice.** An agent that
+escapes its sandbox and reaches the eval cluster's log writer can append whatever it
+likes. It cannot delete, rewrite, or truncate what has already crossed, because the
+bytes are on the other side of a link with no reverse path, on write-once storage.
+The evidence of the escape survives the escape, and the evidence of the cheat
+survives the cheat. Design the logging cluster's storage as WORM and mean it.
+
+Append-only does leave one move available: appending *more*, to bury a record under
+volume or to write plausible-looking entries around it. That is why records are
+sequence-numbered per source (§4), why volume is itself a metric, and why nothing
+downstream treats a log line as authoritative because it looks well-formed.
 
 ---
 
@@ -65,13 +79,27 @@ WORM and mean it.
 This is the operative rule of the document, and it is the one that most log
 architectures get wrong.
 
-> **Every byte in a log record is attacker-influenced until proven otherwise.**
+> **Every byte in a log record is attacker-influenced until proven otherwise, and
+> some of it is dangerous on its own terms.**
 
 Consider what is actually in these logs. Agent-generated text, chosen by a model
 being optimised against the environment. Scraped page content, reproduced in
 tracebacks and assertion messages. Model completions. Template render output. Form
 inputs. Filenames derived from content. A log line is not a report *about* untrusted
 data; it frequently *is* untrusted data with a timestamp on it.
+
+And in a lab running **dangerous capability evaluations**, the logs contain the
+residue of those evaluations. Transcripts of a model doing the thing the eval was
+built to measure. Working exploit code it produced. A successful sandbox escape,
+described in enough operational detail for the run to be reproduced — which is the
+point of logging it, and also what makes it hazardous. Uplift-eval completions whose
+content is the hazard.
+
+So the logging cluster holds material that is simultaneously **possibly malicious**
+(aimed at whatever parses or displays it) and **possibly infohazardous** (dangerous
+because of what it says, to anyone who reads it or copies it out). Those need
+different controls. §5 handles the first. §6 handles the second, and §6 is the
+reason the logging cluster is a containment zone rather than a destination.
 
 So the logging cluster treats an arriving record the way the receiver treats an
 arriving bundle: as bytes to be validated, never as anything to be executed,
@@ -161,7 +189,75 @@ that as untrusted text. Promotion means "passed the checks," not "trustworthy."
 
 ---
 
-## 6. Where the humans are
+## 6. Nothing leaves the logging cluster uncleaned
+
+The logging cluster receives everything the eval cluster could not say over a numeric
+channel. That makes it, plausibly, the most sensitive host in the building: it holds
+the transcripts of dangerous capability evaluations, the operational detail of any
+sandbox escape that occurred, and whatever a model produced while being measured on
+its ability to produce it.
+
+It is therefore not a destination. It is a **containment zone with its own egress
+control**, and the rule is short:
+
+> **Nothing leaves the logging cluster until after a thorough cleaning.**
+
+"Leaves" means anything: a report, a figure for a paper, a quoted transcript in an
+incident write-up, a dataset of trajectories for later analysis, a file on export
+media, a screenshot, a sentence pasted into a chat window. The logging cluster has no
+network path out, and material leaves by a reviewed procedure or not at all.
+
+### 6.1 What cleaning means
+
+Not redaction of names. Three distinct judgements, and they are made by people, not
+by a filter:
+
+1. **Capability residue.** Does this material contain, or meaningfully reconstruct,
+   the dangerous capability the eval was measuring? A transcript demonstrating that a
+   model can do X is usually safe to summarise as "it scored 0.4 on X" and unsafe to
+   publish verbatim. The metric is the finding; the transcript is the hazard.
+2. **Escape technique.** Does it describe how a sandbox was defeated in enough detail
+   to repeat? This needs to reach the people who will fix it and stop there, which is
+   a narrower distribution than "the eval team."
+3. **Malware.** Has it passed §5's checks, and is the exported artifact itself inert?
+   A log excerpt carried out on media can carry a payload as easily as it came in.
+
+Only the *derived* artifact leaves — a summary, a score table, a sanitised excerpt.
+Raw records do not leave, and "I'll just take the trajectory file to look at on my
+laptop" is the specific thing this rule exists to prevent.
+
+### 6.2 Procedure
+
+The same two-person shape as the bulk export in physical-controls-spec §2.4, with an
+addition that matters here: **the second person is reviewing for hazard, not just
+countersigning custody.** Custody review asks "is this person allowed to take this."
+Hazard review asks "should this exist outside this room at all," and the two are
+different questions that the same procedure has to ask separately or it will
+collapse into the easier one.
+
+- Two people, both logged, neither able to complete the procedure alone.
+- A written manifest of what is leaving and its derivation, produced before the
+  transfer.
+- Single-use, accounted export media.
+- Refused outright for material relating to a quarantined checkpoint or an
+  un-triaged watchdog halt until that is cleared by a named reviewer.
+
+### 6.3 Consequences for the people at the station
+
+Reading logs at the wired station means reading, routinely, material in categories
+1 and 2 above. That has staffing consequences the architecture cannot solve:
+need-to-know applies inside the room as well as outside it, the set of people with
+station access is smaller than the set with eval-cluster access, and "I saw it on the
+dashboard" must never be a route to seeing a transcript.
+
+It also has a retention consequence. Material that is hazardous and no longer needed
+is a liability with no offsetting benefit. The logging cluster needs a destruction
+policy with the same seriousness as its retention policy, and WORM storage makes
+destruction a media-level operation that has to be planned rather than an `rm`.
+
+---
+
+## 7. Where the humans are
 
 This refines physical-controls-spec §2, which says humans read logs at the wired
 station and left the station's attachment unstated.
@@ -188,7 +284,7 @@ Consequences worth stating:
 
 ---
 
-## 7. Egress metrics
+## 8. Egress metrics
 
 The logging cluster gets its own block in the metric registry so the dashboard can
 show that logging is alive without anyone being on the inside. Registry version 3,
@@ -217,7 +313,7 @@ outside.
 
 ---
 
-## 8. Open questions
+## 9. Open questions
 
 1. **Volume.** Full trajectories for 10^6 episodes across 10^5 sites is a serious
    data rate for a link with no flow control. Either the diode is sized for peak, or
