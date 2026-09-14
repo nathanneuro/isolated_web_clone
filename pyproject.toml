@@ -13,6 +13,11 @@ dependencies = [
 ]
 
 [dependency-groups]
+demo = [
+    "accelerate>=1.15.0",
+    "torch>=2.0",
+    "transformers>=5.17.0",
+]
 dev = [
     "faker>=40.39.0",
     "hypothesis>=6.168.0",

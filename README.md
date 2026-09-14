@@ -74,6 +74,10 @@ skills/
 tools/
   fake_demo_data_diode/   SIMULATED diode for demos and tests; replace with hardware
   bundle_lint/            spec/test linter; runs outside before signing and inside on receipt
+  bundle_build/           assemble, encrypt, rewrite handles, lint, sign
+  receiver/               inside: layout, signature, sequence, hashes, lint; dispatch
+  brokers/                the agent zone's only two reachable endpoints
+  inference_zone/         inside: model weights; reachable only via the action broker
   bundle-build/           assemble, encrypt, lint, sign
   recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
   compose-fastapi-sqlite-v1/   Tier A deterministic generator
@@ -92,8 +96,11 @@ schemas/
   qa-codes.toml           QA finding codes
   status-codes.toml       bundle status and subcode registry
 example/
-  synthetic-site/         a small invented forum site: scrape/, explorer/, extract/ as the pipeline expects
-  walkthrough.md          run the whole pipeline on it, both sides, on one machine
+  synthetic_site/         a small invented forum board; generate_content.py builds its
+                          seed DB, BM25 shard, and fixtures deterministically
+scripts/
+  fetch_demo_models.py    fetch the two sub-1B demo models (runs OUTSIDE the airgap)
+models/                   gitignored. Weights are provisioned physically, never by diode.
 ```
 
 ## Quick start (single machine, no diode)
