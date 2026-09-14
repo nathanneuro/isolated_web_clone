@@ -23,9 +23,11 @@ from pathlib import Path
 
 MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 
+# The subject gets the larger model: web navigation with a structured action space
+# is harder than the worker's job, which is choosing among enumerated patterns.
 DEMO_MODELS = {
-    "worker": "HuggingFaceTB/SmolLM2-360M-Instruct",
-    "subject": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "subject": "HuggingFaceTB/SmolLM2-360M-Instruct",
+    "worker": "HuggingFaceTB/SmolLM2-135M-Instruct",
 }
 
 

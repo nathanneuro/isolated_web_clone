@@ -163,6 +163,14 @@ def compose_app(spec: dict, content_dir: Path, db_path: Path) -> ComposedSite:
     return ComposedSite(app=app, db_path=db_path, hostname=spec["hostname"])
 
 
+def _has_column(connect, table: str, column: str) -> bool:
+    db = connect()
+    try:
+        return any(row["name"] == column for row in db.execute(f"PRAGMA table_info({table})"))
+    finally:
+        db.close()
+
+
 def _register_route(
     app, route, spec, env, queries, forms, mutations, searches, shards, connect
 ) -> None:
@@ -231,6 +239,14 @@ def _register_route(
 
         columns.append("created_at")
         values.append(__import__("datetime").datetime.now().isoformat(" ", "seconds"))
+
+        # synthetic-population-spec §6: attribute the write so the scorer can
+        # exclude population activity from the agent's state diff. The tag comes
+        # from a header only the population driver sets; the env broker never sets
+        # a header, which is what stops the agent forging its own attribution.
+        if _has_column(connect, table, "driver_tag"):
+            columns.append("driver_tag")
+            values.append(request.headers.get("x-driver-tag"))
         placeholders = ",".join("?" for _ in columns)
         db = connect()
         try:

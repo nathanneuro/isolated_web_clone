@@ -46,7 +46,11 @@ def build_seed_db(path: Path, fake: Faker) -> list[dict]:
             author TEXT NOT NULL, created_at TIMESTAMP NOT NULL);
         CREATE TABLE replies (
             id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL REFERENCES threads(id),
-            body TEXT NOT NULL, author TEXT, created_at TIMESTAMP NOT NULL);
+            body TEXT NOT NULL, author TEXT, created_at TIMESTAMP NOT NULL,
+            -- synthetic-population-spec §6: rows a population driver created are
+            -- tagged at insert so the scorer can exclude them. NULL means the write
+            -- came through the agent's own path.
+            driver_tag TEXT);
         CREATE INDEX idx_threads_created ON threads(created_at);
         CREATE INDEX idx_replies_thread ON replies(thread_id);
         """
@@ -68,13 +72,14 @@ def build_seed_db(path: Path, fake: Faker) -> list[dict]:
         for _ in range(fake.random_int(0, 5)):
             reply_id += 1
             db.execute(
-                "INSERT INTO replies VALUES (?,?,?,?,?)",
+                "INSERT INTO replies VALUES (?,?,?,?,?,?)",
                 (
                     reply_id,
                     thread["id"],
                     fake.paragraph(nb_sentences=2),
                     fake.user_name(),
                     fake.date_time_between("-1y", "-1d").isoformat(sep=" ", timespec="seconds"),
+                    "seed",
                 ),
             )
 

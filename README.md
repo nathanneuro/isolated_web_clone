@@ -92,6 +92,7 @@ tools/
   golive/                 inside: decrypt into sandbox, compose, run suite, return codes
   compose_fastapi_sqlite_v1/  Tier A deterministic generator
   log_ingest/             logging cluster: record framing, sanitiser, quarantine tier
+  eval_harness/           Inspect AI task, solver, and state-diff scorer
   bundle-build/           assemble, encrypt, lint, sign
   recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
   compose-fastapi-sqlite-v1/   Tier A deterministic generator
@@ -126,6 +127,13 @@ make example            # reconstruct + qa + build the synthetic site → ./out/
 make inside-up          # start receiver, go-live, worker, search engine, egress-sender in containers
 make push               # run tools/fake_demo_data_diode in place of the hardware
 make status             # tail egress-reader output
+```
+
+Two scripts run today without a Makefile:
+
+```
+uv run python scripts/run_demo.py                      # build -> diode -> receiver -> go-live
+uv run --group demo python scripts/run_eval_demo.py    # an eval against the cloned web
 ```
 
 The diode in that quick start is [`tools/fake_demo_data_diode/`](tools/fake_demo_data_diode/),

@@ -178,7 +178,10 @@ class EnvBroker:
         if form_action is None:
             self.counters.denied += 1
             return body
-        data = {name: self._form_state.get(f"#{name}", "") for name in fields}
+        # fields maps the selector the agent typed into -> the form field name it
+        # posts as. Keying form state by field name instead would silently drop
+        # every value, since the agent only ever sees selectors.
+        data = {name: self._form_state.get(selector, "") for selector, name in fields}
         response = self._client.post(form_action, data=data, follow_redirects=False)
         if response.status_code in (302, 303) and (location := response.headers.get("location")):
             if INTERNAL_PATH.match(location):
@@ -217,7 +220,8 @@ class EnvBroker:
             return match.group(1)
         return None
 
-    def _form_for(self, selector: str) -> tuple[str | None, list[str]]:
+    def _form_for(self, selector: str) -> tuple[str | None, list[tuple[str, str]]]:
+        """Return the form's action and its (selector, field_name) pairs."""
         response = self._client.get(self.current_path, follow_redirects=False)
         ident = selector.lstrip("#")
         block = re.search(
@@ -230,8 +234,16 @@ class EnvBroker:
         )
         if not header or not INTERNAL_PATH.match(header.group(1)):
             return None, []
-        names = re.findall(r'name="([A-Za-z0-9_]+)"', block.group(1))
-        return header.group(1), names
+
+        fields: list[tuple[str, str]] = []
+        for tag in re.finditer(r"<(?:input|textarea|select)\b[^>]*>", block.group(1)):
+            name = re.search(r'name="([A-Za-z0-9_]+)"', tag.group(0))
+            if not name:
+                continue
+            ident_attr = re.search(r'id="([A-Za-z0-9_\-]+)"', tag.group(0))
+            field_selector = f"#{ident_attr.group(1)}" if ident_attr else f"#{name.group(1)}"
+            fields.append((field_selector, name.group(1)))
+        return header.group(1), fields
 
 
 def observation_from(view: PageView, task: str, step: int, counters: BrokerCounters | None = None) -> Observation:
