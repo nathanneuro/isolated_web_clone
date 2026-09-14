@@ -280,6 +280,23 @@ class TestLayout:
 
         assert_quarantined(receiver, receiver.receive(repack(bundle, mutate)), Status.REJECT_LAYOUT)
 
+    @pytest.mark.parametrize("name", ["\x00", "", "./", "a\x00b"])
+    def test_degenerate_member_names_are_rejected(self, receiver, bundle, tmp_path, name):
+        """Regression: tarfile truncates at NUL, so these reach the check as ""."""
+        import io
+
+        evil = tmp_path / "degenerate.bundle.tar"
+        with tarfile.open(bundle) as src, tarfile.open(evil, "w") as dst:
+            for member in src.getmembers():
+                dst.addfile(member, src.extractfile(member))
+            info = tarfile.TarInfo(name)
+            info.size = 3
+            try:
+                dst.addfile(info, io.BytesIO(b"bad"))
+            except (ValueError, tarfile.TarError):
+                pytest.skip(f"tarfile refused to write member {name!r}")
+        assert_quarantined(receiver, receiver.receive(evil), Status.REJECT_LAYOUT)
+
     def test_garbage_archive_is_rejected(self, receiver, tmp_path):
         junk = tmp_path / "junk.bundle.tar"
         junk.write_bytes(b"\x00\xff" * 5000)

@@ -279,9 +279,16 @@ class Receiver:
 
 def _bad_member_name(name: str) -> str | None:
     """Reject anything that is not a plain relative path inside the fixed layout."""
+    if not name or "\x00" in name:
+        # tarfile truncates a member name at a NUL byte, so "\x00" arrives as "" and
+        # Path("").parts is empty. Found by the fuzz harness, which is the point of
+        # having one: an empty tuple indexed at [0] is a crash, not a rejection.
+        return "empty or NUL member name"
     if name.startswith("/") or "\\" in name:
         return f"absolute or windows path: {name}"
     parts = Path(name).parts
+    if not parts:
+        return f"degenerate member name: {name!r}"
     if any(part in ("..", ".") for part in parts):
         return f"traversal: {name}"
     if parts[0] not in ALLOWED_TOP_LEVEL:

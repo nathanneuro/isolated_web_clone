@@ -1,0 +1,132 @@
+"""Go-live: decrypt into a sandbox, compose, test, return codes (spec §8.5).
+
+    1. receive {bundle_id, deployment_dir} from the worker
+    2. unwrap the content key with the go-live private key
+    3. create an isolated serving sandbox
+    4. decrypt blobs directly into the sandbox filesystem
+    5. decrypt the test fixture into the runner's memory
+    6. run the suite
+    7. return codes; destroy the fixture plaintext
+
+The rule that keeps this honest is step 7. On failure the worker gets an enum and
+per-test codes and nothing else -- no stack trace, no diff, no decrypted output.
+That is the constraint somebody will eventually want to relax to "just let it see
+the traceback", and relaxing it hands a prompt-injection surface back to an LLM
+inside the trusted zone. The traceback exists; a human reads it at the wired
+terminal (physical-controls-spec §2.3).
+
+Plaintext never lands outside the sandbox directory, and the content key is never
+logged, never written anywhere the worker can read, and never returned in any code.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import shutil
+from dataclasses import dataclass, field
+from enum import IntEnum
+from pathlib import Path
+
+from blake3 import blake3
+from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_decrypt
+from nacl.exceptions import CryptoError
+from nacl.public import PrivateKey, SealedBox
+
+from tools.compose_fastapi_sqlite_v1 import ComposeError, compose_app
+
+from .runner import PASS, SKIPPED, TestResult, run_suite
+
+NONCE_BYTES = 24
+
+
+class GoLiveStatus(IntEnum):
+    """schemas/status-codes.toml."""
+
+    PASS = 30
+    TEST_FAIL = 31
+    DECRYPT_FAIL = 32
+    TIMEOUT = 33
+    COMPOSE_UNSUPPORTED = 21
+
+
+@dataclass(frozen=True)
+class GoLiveResult:
+    """Everything the worker learns. Integers, and test IDs it already knew."""
+
+    status: GoLiveStatus
+    tests: tuple[TestResult, ...] = ()
+    detail: str = field(default="", repr=False)  # inside log only; never returned out
+
+    def for_worker(self) -> dict:
+        """The literal payload crossing back to the worker. No detail field."""
+        return {
+            "status": int(self.status),
+            "tests": [[t.test_id, t.code] for t in self.tests],
+        }
+
+
+class GoLiveService:
+    """Holds the go-live private key. The worker cannot read from this process."""
+
+    def __init__(self, private_key_path: Path, sandbox_root: Path) -> None:
+        raw = Path(private_key_path).read_bytes()
+        assert len(raw) == 32, "go-live X25519 private key must be 32 bytes"
+        self._box = SealedBox(PrivateKey(raw))
+        self.sandbox_root = Path(sandbox_root)
+        self.sandbox_root.mkdir(parents=True, exist_ok=True)
+
+    def go_live(self, deployment_dir: Path) -> GoLiveResult:
+        deployment_dir = Path(deployment_dir)
+        manifest = json.loads((deployment_dir / "manifest.json").read_text())
+        sandbox = self.sandbox_root / manifest["bundle_id"]
+        if sandbox.exists():
+            shutil.rmtree(sandbox)
+        sandbox.mkdir(parents=True)
+
+        try:
+            return self._go_live(deployment_dir, manifest, sandbox)
+        except CryptoError as exc:
+            shutil.rmtree(sandbox, ignore_errors=True)
+            return GoLiveResult(GoLiveStatus.DECRYPT_FAIL, detail=str(exc))
+        except ComposeError as exc:
+            shutil.rmtree(sandbox, ignore_errors=True)
+            return GoLiveResult(GoLiveStatus.COMPOSE_UNSUPPORTED, detail=str(exc))
+
+    def _go_live(self, deployment_dir: Path, manifest: dict, sandbox: Path) -> GoLiveResult:
+        wrapped = base64.b64decode(manifest["content_key_wrapped"]["ciphertext_b64"])
+        content_key = self._box.decrypt(wrapped)
+
+        roles = {entry["path"]: entry["role"] for entry in manifest["files"]}
+        fixtures: dict = {}
+        for path, role in sorted(roles.items()):
+            if role in ("spec", "suite"):
+                continue
+            blob = (deployment_dir / path).read_bytes()
+            if blake3(blob).hexdigest() != path.split("/")[1].split(".")[0]:
+                return GoLiveResult(GoLiveStatus.DECRYPT_FAIL, detail=f"handle mismatch: {path}")
+            plaintext = crypto_aead_xchacha20poly1305_ietf_decrypt(
+                blob[NONCE_BYTES:], role.encode(), blob[:NONCE_BYTES], content_key
+            )
+            if role == "fixtures":
+                # Step 5: into the runner's memory, never onto the filesystem.
+                fixtures = json.loads(plaintext)
+                continue
+            target = sandbox / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(plaintext)
+
+        del content_key  # not logged, not stored, not returned
+
+        spec = json.loads((deployment_dir / "spec" / "site.json").read_text())
+        suite = json.loads((deployment_dir / "tests" / "suite.json").read_text())
+        site = compose_app(spec, sandbox, sandbox / spec["db"]["seed_blob_ref"])
+        results = run_suite(site, suite, spec, fixtures)
+
+        fixtures.clear()  # step 7: destroy the fixture plaintext
+
+        failed = [r for r in results if r.code not in (PASS, SKIPPED)]
+        status = GoLiveStatus.TEST_FAIL if failed else GoLiveStatus.PASS
+        if failed:
+            shutil.rmtree(sandbox, ignore_errors=True)  # on fail, destroy it (§8.5.7)
+        return GoLiveResult(status, tuple(results))

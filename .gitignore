@@ -48,3 +48,6 @@ example/synthetic_site/index/main.shard
 
 # Model weights. Provisioned physically, never committed, never through the diode.
 models/
+
+# Hypothesis example database (machine-local)
+.hypothesis/

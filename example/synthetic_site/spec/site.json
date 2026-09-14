@@ -4,55 +4,207 @@
   "framework": "fastapi-sqlite-v1",
   "hostname": "site-000001.internal",
   "routes": [
-    { "id": "r_home", "path": "/", "method": "GET", "template": "t_home", "queries": ["q_recent_threads"] },
-    { "id": "r_search", "path": "/search", "method": "GET", "template": "t_results", "search": "s_main" },
-    { "id": "r_thread", "path": "/thread/{thread_id}", "method": "GET", "template": "t_thread", "queries": ["q_thread_by_id", "q_replies_for_thread"] },
-    { "id": "r_reply", "path": "/thread/{thread_id}/reply", "method": "POST", "form": "f_reply", "mutation": "m_insert_reply" }
+    {
+      "id": "r_home",
+      "path": "/",
+      "method": "GET",
+      "template": "t_home",
+      "queries": [
+        "q_recent_threads"
+      ]
+    },
+    {
+      "id": "r_search",
+      "path": "/search",
+      "method": "GET",
+      "template": "t_results",
+      "search": "s_main"
+    },
+    {
+      "id": "r_thread",
+      "path": "/thread/{thread_id}",
+      "method": "GET",
+      "template": "t_thread",
+      "queries": [
+        "q_thread_by_id",
+        "q_replies_for_thread"
+      ]
+    },
+    {
+      "id": "r_reply",
+      "path": "/thread/{thread_id}/reply",
+      "method": "POST",
+      "form": "f_reply",
+      "mutation": "m_insert_reply"
+    },
+    {
+      "id": "r_login",
+      "path": "/login",
+      "method": "GET",
+      "template": "t_dead_end"
+    }
   ],
   "templates": [
-    { "id": "t_home", "blob_ref": "content/templates/home.html.j2", "engine": "jinja2" },
-    { "id": "t_thread", "blob_ref": "content/templates/thread.html.j2", "engine": "jinja2" },
-    { "id": "t_results", "blob_ref": "content/templates/results.html.j2", "engine": "jinja2" }
+    {
+      "id": "t_home",
+      "blob_ref": "content/templates/home.html.j2",
+      "engine": "jinja2"
+    },
+    {
+      "id": "t_thread",
+      "blob_ref": "content/templates/thread.html.j2",
+      "engine": "jinja2"
+    },
+    {
+      "id": "t_results",
+      "blob_ref": "content/templates/results.html.j2",
+      "engine": "jinja2"
+    },
+    {
+      "id": "t_dead_end",
+      "blob_ref": "content/templates/dead_end.html.j2",
+      "engine": "jinja2"
+    }
   ],
   "db": {
     "tables": [
-      { "name": "threads", "columns": [
-        { "name": "id", "type": "integer", "pk": true },
-        { "name": "title", "type": "text" },
-        { "name": "body", "type": "text" },
-        { "name": "author", "type": "text" },
-        { "name": "created_at", "type": "timestamp", "indexed": true }
-      ]},
-      { "name": "replies", "columns": [
-        { "name": "id", "type": "integer", "pk": true },
-        { "name": "thread_id", "type": "integer", "fk": "threads.id" },
-        { "name": "body", "type": "text" },
-        { "name": "author", "type": "text", "nullable": true },
-        { "name": "created_at", "type": "timestamp" }
-      ]}
+      {
+        "name": "threads",
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer",
+            "pk": true
+          },
+          {
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "name": "body",
+            "type": "text"
+          },
+          {
+            "name": "author",
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp",
+            "indexed": true
+          }
+        ]
+      },
+      {
+        "name": "replies",
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer",
+            "pk": true
+          },
+          {
+            "name": "thread_id",
+            "type": "integer",
+            "fk": "threads.id"
+          },
+          {
+            "name": "body",
+            "type": "text"
+          },
+          {
+            "name": "author",
+            "type": "text",
+            "nullable": true
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp"
+          }
+        ]
+      }
     ],
     "seed_blob_ref": "content/seed.sqlite",
     "seed_format": "sqlite-dump-v1"
   },
   "queries": [
-    { "id": "q_recent_threads", "table": "threads", "order_by": "created_at desc", "limit": 20 },
-    { "id": "q_thread_by_id", "table": "threads", "where": { "id": "{thread_id}" } },
-    { "id": "q_replies_for_thread", "table": "replies", "where": { "thread_id": "{thread_id}" }, "order_by": "created_at asc" }
+    {
+      "id": "q_recent_threads",
+      "table": "threads",
+      "order_by": "created_at desc",
+      "limit": 20
+    },
+    {
+      "id": "q_thread_by_id",
+      "table": "threads",
+      "where": {
+        "id": "{thread_id}"
+      }
+    },
+    {
+      "id": "q_replies_for_thread",
+      "table": "replies",
+      "where": {
+        "thread_id": "{thread_id}"
+      },
+      "order_by": "created_at asc"
+    }
   ],
   "forms": [
-    { "id": "f_reply", "fields": [
-      { "name": "body", "type": "textarea", "required": true, "max_length": 4096 },
-      { "name": "author", "type": "text", "required": false, "max_length": 64 }
-    ]}
+    {
+      "id": "f_reply",
+      "fields": [
+        {
+          "name": "body",
+          "type": "textarea",
+          "required": true,
+          "max_length": 4096
+        },
+        {
+          "name": "author",
+          "type": "text",
+          "required": false,
+          "max_length": 64
+        }
+      ]
+    }
   ],
   "mutations": [
-    { "id": "m_insert_reply", "table": "replies", "op": "insert", "from_form": "f_reply", "bind": { "thread_id": "{thread_id}" } }
+    {
+      "id": "m_insert_reply",
+      "table": "replies",
+      "op": "insert",
+      "from_form": "f_reply",
+      "bind": {
+        "thread_id": "{thread_id}"
+      }
+    }
   ],
   "search": [
-    { "id": "s_main", "kind": "bm25", "tables": ["threads"], "fields": ["title", "body"], "shard_refs": ["index/main.shard"] }
+    {
+      "id": "s_main",
+      "kind": "bm25",
+      "tables": [
+        "threads"
+      ],
+      "fields": [
+        "title",
+        "body"
+      ],
+      "shard_refs": [
+        "index/main.shard"
+      ]
+    }
   ],
-  "interactions": { "auth": "dead_end", "payments": "none", "realtime": "none" },
+  "interactions": {
+    "auth": "dead_end",
+    "payments": "none",
+    "realtime": "none"
+  },
   "assets": [
-    { "path": "/static/style.css", "blob_ref": "content/assets/style.css" }
+    {
+      "path": "/static/style.css",
+      "blob_ref": "content/assets/style.css"
+    }
   ]
 }
