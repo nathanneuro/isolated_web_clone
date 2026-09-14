@@ -3,6 +3,15 @@
 **Date:** 2026-09-14
 **Purpose:** Survey of existing work on offline/"fake internet" environments for web-agent training, and a design plan for the novel component: LLM-regenerated functional website replicas with an integrated local search engine.
 
+> **Scope note.** This document describes the *environment*, including a crawl tier
+> that touches the real internet. The security architecture that wraps it — one-way
+> ingress and egress, content the inside worker cannot read, numeric-only outbound —
+> is in [the README](../README.md) and [`bundle-format-spec.md`](bundle-format-spec.md).
+> Per that split, **this repository contains no scraped data, and the scraper and
+> explorer of §3.1 steps 0–1 are deliberately absent.** Everything published here runs
+> on the invented example site. If you are implementing the crawl tier, the robots,
+> terms, and rate-limit judgement in §3.5 is yours to make per deployment.
+
 ---
 
 ## 1. Background
