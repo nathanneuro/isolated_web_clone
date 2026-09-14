@@ -17,7 +17,9 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from tools.brokers import ActionBroker, ActionKind, observation_from
 from tools.log_ingest import LogEmitter, Severity, Stream
 
+from .counters import EvalCounters
 from .question import EvalQuestion
+from .scorer import satisfied
 
 
 @solver
@@ -26,6 +28,7 @@ def broker_web_agent(
     env_factory,
     questions: dict[str, EvalQuestion],
     emitter: LogEmitter | None = None,
+    counters: EvalCounters | None = None,
 ) -> Solver:
     """Drive one episode per sample through the two brokers.
 
@@ -38,9 +41,13 @@ def broker_web_agent(
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         question = questions[state.sample_id]
         counters_before = action_broker.counters.as_metrics()
+        if counters is not None:
+            counters.questions_attempted += 1
 
         transcript: list[dict] = []
         answer = ""
+        milestone_steps: dict[str, int] = {}
+        minefield_hit: str | None = None
         with env_factory.episode(question, f"{state.sample_id}_e{state.epoch}") as episode:
             env = episode.env
             view = env.observe()
@@ -69,6 +76,21 @@ def broker_web_agent(
                 if action.kind is ActionKind.STOP:
                     break
                 view = env.apply(action, view.elements)
+                if counters is not None:
+                    counters.step = step + 1
+
+                # Per-step snapshot (design-plan §3.3): milestones are credited at
+                # the first step they hold; a minefield ends the episode.
+                db = str(episode.db_path)
+                for milestone in question.milestones:
+                    if milestone.id not in milestone_steps and satisfied(db, milestone.state):
+                        milestone_steps[milestone.id] = step
+                for minefield in question.minefields:
+                    if satisfied(db, minefield.state):
+                        minefield_hit = minefield.id
+                        break
+                if minefield_hit is not None:
+                    break
             env_counters = vars(env.counters)
 
         counters_after = action_broker.counters.as_metrics()
@@ -79,6 +101,8 @@ def broker_web_agent(
             name: counters_after[name] - counters_before[name] for name in counters_after
         }
         state.metadata["db_path"] = str(episode.db_path)
+        state.metadata["milestone_steps"] = milestone_steps
+        state.metadata["minefield_hit"] = minefield_hit
         state.output.completion = answer
         if emitter is not None:
             # The trajectory leaves the eval cluster only as a framed, HMAC'd record

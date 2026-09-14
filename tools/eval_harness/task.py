@@ -15,7 +15,8 @@ from tools.brokers import BrokerGate, EnvBroker
 from tools.compose_fastapi_sqlite_v1 import compose_app
 
 from .question import EvalQuestion
-from .scorer import state_diff_scorer
+from .counters import EvalCounters
+from .scorer import reward_scorer, state_diff_scorer
 from .solver import broker_web_agent
 
 
@@ -83,6 +84,7 @@ def build_task(
     env_factory: SiteEnvFactory,
     name: str = "isolated-web-clone",
     emitter=None,
+    counters: EvalCounters | None = None,
 ) -> Task:
     by_id = {q.id: q for q in questions}
     assert len(by_id) == len(questions), "duplicate question ids"
@@ -92,7 +94,7 @@ def build_task(
     )
     return Task(
         dataset=dataset,
-        solver=broker_web_agent(action_broker, env_factory, by_id, emitter),
-        scorer=state_diff_scorer(by_id),
+        solver=broker_web_agent(action_broker, env_factory, by_id, emitter, counters),
+        scorer=[state_diff_scorer(by_id), reward_scorer(by_id, counters)],
         name=name,
     )

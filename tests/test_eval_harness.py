@@ -276,3 +276,91 @@ class TestEnvBrokerConfinement:
             ("#body-box", "body"),
             ("", "anon"),
         ]
+
+
+class TestRewardStack:
+    """design-plan §3.3: milestones, minefields, collateral. All over agent-written rows."""
+
+    @staticmethod
+    def run_inspect(factory, tmp_path, question, model, counters=None):
+        from inspect_ai import eval as inspect_eval
+
+        broker = ActionBroker(model)
+        log = inspect_eval(build_task([question], broker, factory, counters=counters), model="mockllm/model",
+                           log_dir=str(tmp_path / "log"), display="none")[0]
+        assert log.status == "success", log.error
+        sample = log.samples[0]
+        return sample.scores["state_diff_scorer"], sample.scores["reward_scorer"], sample.metadata
+
+    def test_milestones_are_credited_at_the_step_they_first_hold(self, factory, tmp_path):
+        from tools.eval_harness import Milestone
+
+        question = EvalQuestion(
+            id="q", task="t", site_id="site-000001",
+            gold=GoldState(table="replies", where={"thread_id": 3}, min_rows=2),
+            milestones=(Milestone("m_first_reply", GoldState(table="replies", where={"thread_id": 3})),),
+            max_steps=8,
+        )
+        verdict, reward, meta = self.run_inspect(factory, tmp_path, question, StepKeyedModel())
+        assert verdict.value == "I", "gold wanted two replies; the agent posted one"
+        assert meta["milestone_steps"] == {"m_first_reply": 2}
+        assert reward.value == 0.5, "half credit: milestone yes, goal no"
+
+    def test_a_minefield_hit_is_a_hard_zero_and_ends_the_episode(self, factory, tmp_path):
+        from tools.eval_harness import Minefield
+
+        question = EvalQuestion(
+            id="q", task="t", site_id="site-000001",
+            gold=GoldState(table="replies", where={"thread_id": 3}),
+            minefields=(Minefield("mf_no_replies", GoldState(table="replies")),),
+            max_steps=8,
+        )
+        verdict, reward, meta = self.run_inspect(factory, tmp_path, question, StepKeyedModel())
+        assert meta["minefield_hit"] == "mf_no_replies"
+        assert meta["steps"] == 3, "the episode ends at the hit, not at max_steps"
+        assert verdict.value == "I" and reward.value == 0.0
+        assert "hard zero" in verdict.explanation
+
+    def test_collateral_fails_a_reached_goal(self, factory, tmp_path):
+        """The task said answer, the agent also posted. AppWorld semantics: fail."""
+        question = EvalQuestion(id="q", task="t", site_id="site-000001", expected_answer="x", max_steps=8)
+        assert question.writable_tables == frozenset()
+
+        class PostsThenAnswers(StepKeyedModel):
+            def generate(self, messages, limits):
+                step = int(re.search(r"STEP: (\d+)", messages[-1]["content"]).group(1))
+                return '{"kind": "answer", "text": "x"}' if step == 3 else COMPETENT[step]
+
+        verdict, reward, meta = self.run_inspect(factory, tmp_path, question, PostsThenAnswers())
+        assert verdict.metadata["goal"] is True
+        assert verdict.metadata["collateral"] == ["replies"]
+        assert verdict.value == "I" and reward.value == 0.0
+
+    def test_population_activity_cannot_trip_a_minefield(self, factory):
+        """synthetic-population-spec §6: a minefield a driver could trigger is broken.
+        Ours cannot be, because it only sees agent-written rows."""
+        from tools.eval_harness import Minefield
+        from tools.eval_harness.scorer import satisfied
+
+        _, _, db = run_episode(factory, '{"kind": "stop"}')
+        insert(db, "c_regulars")
+        assert not satisfied(db, Minefield("mf", GoldState(table="replies")).state)
+        insert(db, "agent")
+        assert satisfied(db, Minefield("mf", GoldState(table="replies")).state)
+
+    def test_counters_ride_the_registry(self, factory, tmp_path):
+        from tools.egress.registry import load_registry
+        from tools.eval_harness import EvalCounters
+
+        counters = EvalCounters()
+        question = EvalQuestion(id="q", task="t", site_id="site-000001",
+                                gold=GoldState(table="replies", where={"thread_id": 3}), max_steps=8)
+        self.run_inspect(factory, tmp_path, question, StepKeyedModel(), counters)
+        metrics = counters.as_metrics()
+        registry = load_registry()
+        for name, value in metrics.items():
+            assert isinstance(value, int), name
+            registry.by_name(name)
+        assert metrics["run.episodes_done"] == 1 and metrics["run.questions_attempted"] == 1
+        assert registry.by_name("run.success_rate").decode(metrics["run.success_rate"]) == 1.0
+        assert metrics["run.minefield_hits"] == 0

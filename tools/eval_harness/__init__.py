@@ -11,16 +11,21 @@ inside the airgap. Running the standard framework does not widen the agent's
 authority, because the brokers are what the framework talks to.
 """
 
-from .question import EvalQuestion, GoldState
-from .scorer import state_diff_scorer
+from .counters import EvalCounters
+from .question import EvalQuestion, GoldState, Milestone, Minefield
+from .scorer import reward_scorer, state_diff_scorer
 from .solver import broker_web_agent
 from .task import SiteEnvFactory, build_task
 
 __all__ = [
+    "EvalCounters",
     "EvalQuestion",
     "GoldState",
+    "Milestone",
+    "Minefield",
     "SiteEnvFactory",
     "broker_web_agent",
     "build_task",
+    "reward_scorer",
     "state_diff_scorer",
 ]
