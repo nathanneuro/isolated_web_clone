@@ -8,6 +8,14 @@ suite meaningful -- the harness knows what correct looks like because the shapes
 fixed.
 """
 
+from .classify import Classification, classify_spec
 from .compose import WRITER_COLUMN, WRITER_HEADER, ComposeError, compose_app
 
-__all__ = ["WRITER_COLUMN", "WRITER_HEADER", "ComposeError", "compose_app"]
+__all__ = [
+    "WRITER_COLUMN",
+    "WRITER_HEADER",
+    "Classification",
+    "ComposeError",
+    "classify_spec",
+    "compose_app",
+]
