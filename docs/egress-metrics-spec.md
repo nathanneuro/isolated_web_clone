@@ -168,6 +168,11 @@ The registry is a versioned table checked into the repo and compiled into both s
 | 103 | `broker.invalid_selector` | count, delta | delta | action broker |
 | 104 | `broker.truncated_observations` | count, delta | delta | action broker |
 | 105 | `broker.env_denied` | count, delta | delta | env broker |
+| 110 | `driver.actions_performed` | count, delta | delta | population driver |
+| 111 | `driver.actions_clamped` | count, delta | delta | population driver |
+| 112 | `driver.ambient_suppressed` | count, delta | delta | population driver |
+| 113 | `driver.targets_unavailable` | count, delta | delta | population driver |
+| 114 | `driver.post_failures` | count, delta | delta | population driver |
 
 **Retired IDs.** `53` (`run.loss`), `60` (`run.lr`), `61` (`run.grad_norm`) were training quantities. This environment evaluates; it does not train, and the training loop is the reader's own. The IDs are retired rather than repurposed, per the rule above: a reader compiled against registry v2 must not reinterpret a v3 value. They are listed here so nobody fills the gap.
 

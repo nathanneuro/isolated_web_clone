@@ -94,7 +94,7 @@ def test_sandbox_ids_are_in_their_own_block(registry):
 
 
 def test_registry_version_bumped_for_the_sandbox_block(registry):
-    assert registry["registry_version"] >= 3
+    assert registry["registry_version"] >= 4
 
 
 def test_retired_ids_are_holes_not_absences(registry):
@@ -159,7 +159,27 @@ def test_log_and_broker_blocks_are_registered(registry):
     assert any(n.startswith("log.") for n in by_name)
 
 
-@pytest.mark.parametrize(("prefix", "lo", "hi"), [("sandbox.", 80, 89), ("log.", 90, 99), ("broker.", 100, 109)])
+def test_every_emitted_counter_is_registered(registry):
+    """Any component with an as_metrics() must only emit registered names.
+
+    This is the gap that let the broker ship five unregistered metrics: code and
+    registry drifted because nothing checked them against each other.
+    """
+    from tools.brokers.action_broker import BrokerCounters
+    from tools.brokers.env_broker import EnvCounters
+    from tools.log_ingest import IngestCounters
+    from tools.population import DriverCounters
+
+    by_name = {v["name"] for v in registry["metrics"].values()}
+    for counters in (BrokerCounters(), EnvCounters(), IngestCounters(), DriverCounters()):
+        for name in counters.as_metrics():
+            assert name in by_name, f"{name} emitted by {type(counters).__name__}"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "lo", "hi"),
+    [("sandbox.", 80, 89), ("log.", 90, 99), ("broker.", 100, 109), ("driver.", 110, 119)],
+)
 def test_blocks_stay_in_their_id_ranges(registry, prefix, lo, hi):
     for mid, metric in registry["metrics"].items():
         if metric["name"].startswith(prefix):

@@ -1,7 +1,7 @@
 # Egress metric registry.
 #
 # Generated from the tables in docs/egress-metrics-spec.md §8,
-# docs/agent-sandbox-spec.md §7, and docs/log-diode-spec.md §7. Compiled into both
+# docs/agent-sandbox-spec.md §7, and docs/log-diode-spec.md §8. Compiled into both
 # the sender and the reader; names never travel on the wire, only IDs do.
 #
 # IDs are NEVER reused. Adding or removing a metric is a registry version bump plus a
@@ -15,10 +15,10 @@
 # `priority` decides what rides in a frame when the registry is larger than one frame
 # holds, which it is. `always` metrics are in every frame -- they are the ones whose
 # ABSENCE is the alarm. Everything else rotates round-robin. Selecting by lowest ID
-# instead would starve whichever block was added last, and the newest block is the
-# log and sandbox telemetry, which is backwards.
+# instead would starve whichever block was added last, and the newest blocks are the
+# log, sandbox, broker, and driver telemetry, which is backwards.
 
-registry_version = 3
+registry_version = 4
 max_metrics = 64
 schema_version = 1
 
@@ -572,3 +572,43 @@ scale = 1
 delta = true
 priority = "rotate"
 source = "env broker"
+
+[metrics.110]
+name = "driver.actions_performed"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "population driver"
+
+[metrics.111]
+name = "driver.actions_clamped"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "population driver"
+
+[metrics.112]
+name = "driver.ambient_suppressed"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "population driver"
+
+[metrics.113]
+name = "driver.targets_unavailable"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "population driver"
+
+[metrics.114]
+name = "driver.post_failures"
+unit = "count"
+scale = 1
+delta = true
+priority = "rotate"
+source = "population driver"
