@@ -94,6 +94,7 @@ tools/
   log_ingest/             logging cluster: record framing, sanitiser, quarantine tier
   eval_harness/           Inspect AI task, solver, and state-diff scorer
   population/             ambient liveness + eval choreography, deterministic
+  egress/                 numeric channel: frame, priority selection, sender, reader
   bundle-build/           assemble, encrypt, lint, sign
   recon-check/            local deploy + test harness for outside agents (unencrypted, full logs)
   compose-fastapi-sqlite-v1/   Tier A deterministic generator
