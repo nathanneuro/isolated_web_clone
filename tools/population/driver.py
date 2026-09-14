@@ -33,7 +33,12 @@ MAX_ACTIONS_PER_EPISODE = 50
 
 # The action enum the driver implements. A behaviour naming anything else is a
 # driver-release ticket, not a spec change (spec §3.2).
-SUPPORTED_ACTIONS = frozenset({"form_submit"})
+SUPPORTED_ACTIONS = frozenset({"form_submit", "vote", "edit_own", "delete_own"})
+# `vote` is a form_submit whose form carries no text; it is named separately so
+# a behaviour spec reads as what it is. `edit_own` and `delete_own` act on rows
+# the actor wrote, which the driver knows from the row id the site returns on
+# insert and from nothing else: it has no database handle to look with.
+OWN_ACTIONS = frozenset({"edit_own", "delete_own"})
 
 TARGET_ID = re.compile(r'data-thread-id="(\d+)"')
 
@@ -216,6 +221,8 @@ class PopulationDriver:
         self.tick_seconds = tick_seconds
         self.counters = DriverCounters()
         self.performed: list[PerformedAction] = []
+        self._owned: dict[tuple[str, str], list[int]] = {}  # (actor, table) -> row ids
+        self._mutations = {m["id"]: m for m in spec.get("mutations", [])}
 
         # Seed from the episode identity, never from wall-clock or object ids.
         digest = hashlib.blake2b(
@@ -257,7 +264,8 @@ class PopulationDriver:
                 if content is None:
                     continue
                 action = self._submit(
-                    step, actor.id, script_step.form, script_step.route, content
+                    step, actor.id, script_step.form, script_step.route, content,
+                    own=script_step.action in OWN_ACTIONS,
                 )
                 if action:
                     performed.append(action)
@@ -282,7 +290,8 @@ class PopulationDriver:
                     if content is None:
                         continue
                     action = self._submit(
-                        step, cohort.id, behaviour.form, behaviour.route, content
+                        step, cohort.id, behaviour.form, behaviour.route, content,
+                        own=behaviour.action in OWN_ACTIONS,
                     )
                     if action:
                         performed.append(action)
@@ -303,7 +312,7 @@ class PopulationDriver:
     # -- acting ------------------------------------------------------------
 
     def _submit(
-        self, step: int, actor: str, form_id: str, route_id: str, content: dict
+        self, step: int, actor: str, form_id: str, route_id: str, content: dict, *, own: bool = False
     ) -> PerformedAction | None:
         if self.counters.actions_performed >= self.max_actions:
             # The cap is the driver's, not the spec's. A spec that declares an
@@ -317,7 +326,9 @@ class PopulationDriver:
             self.counters.post_failures += 1
             return None
 
-        path = self._resolve(route["path"])
+        mutation = self._mutations.get(route.get("mutation", ""))
+        table = mutation["table"] if mutation else ""
+        path = self._resolve_own(route["path"], actor, table) if own else self._resolve(route["path"])
         if path is None:
             self.counters.targets_unavailable += 1
             return None
@@ -336,8 +347,24 @@ class PopulationDriver:
             self.counters.post_failures += 1
             return None
 
+        if (row_id := response.headers.get("x-row-id")) and table:
+            self._owned.setdefault((actor, table), []).append(int(row_id))
+        if own and mutation and mutation["op"] == "delete":
+            self._owned[(actor, table)].remove(int(path.rstrip("/").split("/")[-2]))
+
         self.counters.actions_performed += 1
         return PerformedAction(step, actor, form_id, path, response.status_code)
+
+    def owned(self, actor: str, table: str) -> list[int]:
+        return list(self._owned.get((actor, table), []))
+
+    def _resolve_own(self, path: str, actor: str, table: str) -> str | None:
+        """Fill the path param with a row this actor wrote, or nothing."""
+        rows = self._owned.get((actor, table))
+        if not rows:
+            return None
+        chosen = self._rng.choice(sorted(rows))
+        return re.sub(r"\{[a-z_]+\}", str(chosen), path)
 
     def _resolve(self, path: str) -> str | None:
         """Fill path params by reading the site, never by reading the database."""

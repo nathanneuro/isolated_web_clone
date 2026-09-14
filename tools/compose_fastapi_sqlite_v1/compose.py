@@ -234,8 +234,9 @@ def _register_route(
     if mutation_id is None:
         raise ComposeError(f"POST route {route_id} has no mutation")
     mutation = mutations[mutation_id]
-    if mutation["op"] != "insert":
-        raise ComposeError(f"unsupported mutation op: {mutation['op']}")
+    op = mutation["op"]
+    if op not in ("insert", "update", "delete"):
+        raise ComposeError(f"unsupported mutation op: {op}")
     form = forms[mutation["from_form"]]
     table = _check_identifier(mutation["table"], "table")
     field_names = [_check_identifier(f["name"], "form field") for f in form["fields"]]
@@ -243,35 +244,71 @@ def _register_route(
         _check_identifier(column, "bind column"): PARAM_REF.match(ref).group(1)
         for column, ref in (mutation.get("bind") or {}).items()
     }
+    if op in ("update", "delete") and not bindings:
+        # A row to change must be named by the path. An unbound update is a
+        # whole-table write, which no site interface offers.
+        raise ComposeError(f"mutation {mutation_id}: {op} needs a bind")
+
+    def _read_fields(body, *, required: bool) -> tuple[list[str], list[str]] | HTMLResponse:
+        columns, values = [], []
+        for field in form["fields"]:
+            value = body.get(field["name"])
+            if required and field.get("required") and not value:
+                return HTMLResponse("missing required field", status_code=400)
+            if value is not None:
+                columns.append(field["name"])
+                values.append(value)
+        return columns, values
 
     async def post_handler(request: Request, _route=route):
         writer = request.headers.get(WRITER_HEADER, "")
         if not WRITER_VALUE.match(writer):
             return HTMLResponse("missing writer attribution", status_code=400)
         body = await request.form()
-        columns, values = [WRITER_COLUMN], [writer]
-        for field in form["fields"]:
-            value = body.get(field["name"])
-            if field.get("required") and not value:
-                return HTMLResponse("missing required field", status_code=400)
-            columns.append(field["name"])
-            values.append(value)
-        for column, param in bindings.items():
-            columns.append(column)
-            values.append(request.path_params[param])
-
-        columns.append("created_at")
-        values.append(__import__("datetime").datetime.now().isoformat(" ", "seconds"))
-        placeholders = ",".join("?" for _ in columns)
+        parent = request.url.path.rsplit("/", 1)[0] or "/"
         db = connect()
         try:
-            db.execute(
-                f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})", values
-            )
+            if op == "insert":
+                read = _read_fields(body, required=True)
+                if isinstance(read, HTMLResponse):
+                    return read
+                columns, values = [WRITER_COLUMN, *read[0]], [writer, *read[1]]
+                for column, param in bindings.items():
+                    columns.append(column)
+                    values.append(request.path_params[param])
+                columns.append("created_at")
+                values.append(__import__("datetime").datetime.now().isoformat(" ", "seconds"))
+                placeholders = ",".join("?" for _ in columns)
+                cursor = db.execute(
+                    f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})", values
+                )
+                db.commit()
+                # The new row's id, for the writer only. The env broker returns a
+                # PageView and never a header, so the agent does not see this; the
+                # population driver uses it to know which rows are its own.
+                return RedirectResponse(parent, status_code=303, headers={"x-row-id": str(cursor.lastrowid)})
+
+            # update and delete: the path names the row, and the writer must own it.
+            # Ownership is the attribution column; there is no other identity.
+            where = " AND ".join([f"{column} = ?" for column in bindings] + [f"{WRITER_COLUMN} = ?"])
+            keys = [request.path_params[param] for param in bindings.values()] + [writer]
+            if op == "update":
+                read = _read_fields(body, required=False)
+                if isinstance(read, HTMLResponse):
+                    return read
+                if not read[0]:
+                    return HTMLResponse("nothing to update", status_code=400)
+                assignments = ", ".join(f"{column} = ?" for column in read[0])
+                cursor = db.execute(f"UPDATE {table} SET {assignments} WHERE {where}", [*read[1], *keys])
+            else:
+                cursor = db.execute(f"DELETE FROM {table} WHERE {where}", keys)
             db.commit()
+            if cursor.rowcount == 0:
+                # Missing, or somebody else's. The two are indistinguishable on
+                # purpose: a 404 does not confirm that a row exists.
+                return HTMLResponse("not found", status_code=404)
+            return RedirectResponse(parent.rsplit("/", 1)[0] or "/", status_code=303)
         finally:
             db.close()
-        # Redirect to the parent resource, the usual post-redirect-get.
-        return RedirectResponse(request.url.path.rsplit("/", 1)[0], status_code=303)
 
     app.add_api_route(path, post_handler, methods=["POST"], name=route_id)

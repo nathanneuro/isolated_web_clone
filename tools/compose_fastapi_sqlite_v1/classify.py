@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 SUPPORTED_FRAMEWORK = "fastapi-sqlite-v1"
-SUPPORTED_MUTATION_OPS = frozenset({"insert"})
+SUPPORTED_MUTATION_OPS = frozenset({"insert", "update", "delete"})
 SUPPORTED_ENGINES = frozenset({"jinja2"})
 SUPPORTED_SEARCH_KINDS = frozenset({"bm25"})
 # "none" and "dead_end" render as a fixed page; anything functional is not built.
@@ -59,6 +59,8 @@ def classify_spec(spec: dict) -> Classification:
 
     for mutation in spec.get("mutations", []):
         if mutation.get("op") not in SUPPORTED_MUTATION_OPS:
+            unsupported.append(mutation["id"])
+        elif mutation["op"] in ("update", "delete") and not mutation.get("bind"):
             unsupported.append(mutation["id"])
 
     for search in spec.get("search", []):
