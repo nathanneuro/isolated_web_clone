@@ -112,13 +112,6 @@ So choreography is a declaration the driver interprets, and the driver is a fixe
 reviewed program inside. A researcher describes *what the users do*; they do not ship
 a program that does it.
 
-Note the scope of this argument. It does not say that animation code running in the
-environment zone would be a new trust violation — that zone is already where
-LLM-generated code derived from scraped content runs, since that is what a
-reconstructed site *is*, and the sandbox around it is what contains both. The
-argument is narrower and only about the dev channel: the pipeline path ships things
-nothing inside obeys, and the command path ships the one thing it does.
-
 ### 3.1 The lines that actually matter
 
 Containment is a property of where animation runs, not of whether it was declared.
