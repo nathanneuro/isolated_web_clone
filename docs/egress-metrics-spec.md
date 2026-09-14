@@ -12,6 +12,14 @@ The egress channel is the only automated path from inside the airgap to anywhere
 
 The design principle is that the channel carries **numbers from a fixed registry at a fixed rate**, and the thing that reads them on the far side is small enough to review in full and fuzz to exhaustion.
 
+> **The sender is inside the airgap, so the rate cap and schema checks described
+> below are correctness measures, not security boundaries** — a compromised inside
+> owns the process implementing them. For those limits to be guarantees they must be
+> enforced by fixed-function hardware upstream of the link, which also closes the
+> frame-timing sub-channel this spec otherwise leaves open. See
+> [`physical-controls-spec.md`](physical-controls-spec.md) §3. The bandwidth ceiling
+> in §7 assumes that filter is present.
+
 ## 2. Scope and threat model
 
 **In scope.**

@@ -31,6 +31,10 @@ dev dashboard ◀── egress-reader ◀────────────┼
 (LAN only)        (fixed-schema numbers)     │ diode │
                                              │       │
                                              │       │  wired terminal (humans; logs, debugging, export)
+                                             │       │
+                                             │       │  agent zone: microVM ─▶ brokers ─▶ inference
+                                             │       │              │                     + environment
+                                             │       │         escape watchdog ─▶ halt run
 ```
 
 ## Invariants
@@ -40,8 +44,9 @@ Everything in the repo exists to hold one of these:
 1. **Inside has no network path out** except the outbound diode to the dev reader.
 2. **Everything entering is one-way and either signed or opaque.** Dev commands are signed and replay-protected. Site content is encrypted to a key only the go-live service holds.
 3. **No LLM inside reads site content.** The worker composes from plaintext structure; content is decrypted only inside serving sandboxes by a deterministic service.
-4. **No free text crosses the diode in either direction.** Specs and tests are schema-only and linted. Egress is integers from a fixed registry.
+4. **No free text crosses the diode in either direction.** Specs and tests are schema-only and linted. Egress is integers from a fixed registry, enforced in hardware upstream of the link, not only by the sender's own code.
 5. **Every LLM that reads scraped content is outside, and its output format has nowhere for an injection to live.**
+6. **The agent being trained is sandboxed from the inference and environment zones, and an escape stops the run automatically** rather than waiting for someone to read a dashboard.
 
 ## Documents
 
@@ -50,6 +55,8 @@ Everything in the repo exists to hold one of these:
 | [`docs/design-plan.md`](docs/design-plan.md) | The environment: source map of prior work, system architecture, reward design, validation, build order |
 | [`docs/bundle-format-spec.md`](docs/bundle-format-spec.md) | The ingress unit: layout, signing, content encryption, site spec schema, test suite, component responsibilities, command bundles, status codes |
 | [`docs/egress-metrics-spec.md`](docs/egress-metrics-spec.md) | The outbound channel: fixed-size frames, metric registry, sender, reader, bandwidth ceiling |
+| [`docs/agent-sandbox-spec.md`](docs/agent-sandbox-spec.md) | Isolating the agent being trained from the inference and environment zones; escape detection and the automatic halt |
+| [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) | The wired developer station, hardware enforcement of the egress filter, bulk export |
 | [`skills/site-reconstruct/SKILL.md`](skills/site-reconstruct/SKILL.md) | Outside agent: scrape → spec + templates + seed DB + tests |
 | [`skills/site-qa/SKILL.md`](skills/site-qa/SKILL.md) | Outside agent: adversarial checks before encryption |
 | [`skills/inside-worker/SKILL.md`](skills/inside-worker/SKILL.md) | Inside agent: verified bundle → deployment, structure only |
@@ -117,7 +124,8 @@ Expected: one bundle received, composed, passed go-live, registered; `sites.live
 - **The scraper and explorer.** They touch the real internet and are the part most likely to need per-deployment judgement about robots, terms, and rate limits. `site-reconstruct` documents the input layout they must produce.
 - **Any scraped content.** The example site is invented.
 - **Training code.** The run loop is yours; `command-executor` and `egress-sender` document the interfaces it plugs into.
-- **Physical controls.** No removable media inside, terminal is display-and-keyboard only, two-person export procedure. The specs state these; they cannot enforce them.
+- **Physical controls.** No removable media inside, terminal is display-and-keyboard only, two-person export procedure, and the FPGA egress filter that makes the rate cap real rather than advisory. [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) specifies these; code cannot enforce them.
+- **Diode hardware.** `tools/fake_demo_data_diode/` simulates the protocol so the pipeline runs on one machine. It is not a diode and does not pretend to be.
 
 ## Threat model in one paragraph
 

@@ -1,0 +1,358 @@
+# Egress metric registry.
+#
+# egress-metrics-spec.md §8 and agent-sandbox-spec.md §7. Compiled into both the
+# sender and the reader; names never travel on the wire, only IDs do. Adding or
+# removing a metric is a registry version bump plus a sender release plus a reader
+# release. IDs are NEVER reused: a reader compiled against an older registry must not
+# silently reinterpret a value.
+#
+# `scale` is the divisor the reader applies to the int32 wire value. `delta` means the
+# value is a change since the last frame rather than an absolute (frame flags bit 0).
+
+registry_version = 2
+max_metrics = 64
+schema_version = 1
+
+
+[metrics.1]
+name = "sys.heartbeat"
+unit = "count"
+scale = 1
+delta = true
+source = "sender"
+
+[metrics.2]
+name = "sys.uptime_s"
+unit = "seconds"
+scale = 1
+delta = false
+source = "sender"
+
+[metrics.3]
+name = "egress.dropped_metrics"
+unit = "count"
+scale = 1
+delta = true
+source = "sender"
+
+[metrics.4]
+name = "egress.bad_writes"
+unit = "count"
+scale = 1
+delta = true
+source = "sender"
+
+[metrics.10]
+name = "recv.bundles_ok"
+unit = "count"
+scale = 1
+delta = true
+source = "receiver"
+
+[metrics.11]
+name = "recv.bundles_rejected"
+unit = "count"
+scale = 1
+delta = true
+source = "receiver"
+
+[metrics.12]
+name = "recv.last_reject_code"
+unit = "enum"
+scale = 1
+delta = false
+source = "receiver"
+values = "enum (bundle spec §8.3)"
+
+[metrics.13]
+name = "recv.sequence_high_water"
+unit = "count"
+scale = 1
+delta = false
+source = "receiver"
+
+[metrics.20]
+name = "worker.inbox_depth"
+unit = "count"
+scale = 1
+delta = false
+source = "worker"
+
+[metrics.21]
+name = "worker.composed"
+unit = "count"
+scale = 1
+delta = true
+source = "worker"
+
+[metrics.22]
+name = "worker.failed"
+unit = "count"
+scale = 1
+delta = true
+source = "worker"
+
+[metrics.23]
+name = "worker.last_status_code"
+unit = "enum"
+scale = 1
+delta = false
+source = "worker"
+values = "enum"
+
+[metrics.24]
+name = "worker.last_subcode"
+unit = "enum"
+scale = 1
+delta = false
+source = "worker"
+values = "enum"
+
+[metrics.30]
+name = "golive.pass"
+unit = "count"
+scale = 1
+delta = true
+source = "go-live"
+
+[metrics.31]
+name = "golive.fail"
+unit = "count"
+scale = 1
+delta = true
+source = "go-live"
+
+[metrics.32]
+name = "golive.sandbox_count"
+unit = "count"
+scale = 1
+delta = false
+source = "go-live"
+
+[metrics.33]
+name = "golive.last_duration_s"
+unit = "seconds"
+scale = 1
+delta = false
+source = "go-live"
+
+[metrics.40]
+name = "sites.live"
+unit = "count"
+scale = 1
+delta = false
+source = "registry"
+
+[metrics.41]
+name = "sites.retired"
+unit = "count"
+scale = 1
+delta = true
+source = "registry"
+
+[metrics.42]
+name = "search.indexed_sites"
+unit = "count"
+scale = 1
+delta = false
+source = "search engine"
+
+[metrics.43]
+name = "search.qps"
+unit = "scaled"
+scale = 100
+delta = false
+source = "search engine"
+
+[metrics.50]
+name = "run.state"
+unit = "enum"
+scale = 1
+delta = false
+source = "run loop"
+values = "enum: 0 idle, 1 running, 2 paused, 3 done, 4 error"
+
+[metrics.51]
+name = "run.step"
+unit = "count"
+scale = 1
+delta = false
+source = "run loop"
+
+[metrics.52]
+name = "run.episodes"
+unit = "count"
+scale = 1
+delta = true
+source = "run loop"
+
+[metrics.53]
+name = "run.loss"
+unit = "scaled"
+scale = 10000
+delta = false
+source = "run loop"
+
+[metrics.54]
+name = "run.reward_mean"
+unit = "scaled"
+scale = 10000
+delta = false
+source = "run loop"
+
+[metrics.55]
+name = "run.reward_passk"
+unit = "scaled"
+scale = 10000
+delta = false
+source = "run loop"
+
+[metrics.56]
+name = "run.success_rate"
+unit = "scaled"
+scale = 10000
+delta = false
+source = "run loop"
+
+[metrics.57]
+name = "run.minefield_hits"
+unit = "count"
+scale = 1
+delta = true
+source = "run loop"
+
+[metrics.58]
+name = "run.collateral_flags"
+unit = "count"
+scale = 1
+delta = true
+source = "run loop"
+
+[metrics.59]
+name = "run.tokens_per_s"
+unit = "count"
+scale = 1
+delta = false
+source = "run loop"
+
+[metrics.60]
+name = "run.lr"
+unit = "scaled"
+scale = 100000000
+delta = false
+source = "run loop"
+
+[metrics.61]
+name = "run.grad_norm"
+unit = "scaled"
+scale = 10000
+delta = false
+source = "run loop"
+
+[metrics.70]
+name = "hw.gpu_util_pct"
+unit = "scaled"
+scale = 100
+delta = false
+source = "node agent"
+
+[metrics.71]
+name = "hw.gpu_mem_pct"
+unit = "scaled"
+scale = 100
+delta = false
+source = "node agent"
+
+[metrics.72]
+name = "hw.disk_free_pct"
+unit = "scaled"
+scale = 100
+delta = false
+source = "node agent"
+
+[metrics.73]
+name = "hw.temp_c"
+unit = "scaled"
+scale = 10
+delta = false
+source = "node agent"
+
+[metrics.74]
+name = "hw.node_count_ok"
+unit = "count"
+scale = 1
+delta = false
+source = "node agent"
+
+[metrics.80]
+name = "sandbox.escape_indicator"
+unit = "enum"
+scale = 1
+delta = false
+source = "watchdog"
+values = "enum: 0 clean, 1 suspicious, 2 escape, 3 detector down"
+
+[metrics.81]
+name = "sandbox.first_detector_id"
+unit = "enum"
+scale = 1
+delta = false
+source = "watchdog"
+values = "enum: D1–D11 as 1–11, 0 none"
+
+[metrics.82]
+name = "sandbox.detectors_firing"
+unit = "count"
+scale = 1
+delta = false
+source = "watchdog"
+
+[metrics.83]
+name = "sandbox.detectors_live"
+unit = "scaled"
+scale = 1
+delta = false
+source = "watchdog"
+
+[metrics.84]
+name = "sandbox.watchdog_state"
+unit = "enum"
+scale = 1
+delta = false
+source = "watchdog"
+values = "enum: 0 clean, 1 halting, 2 halted"
+
+[metrics.85]
+name = "sandbox.halts_total"
+unit = "count"
+scale = 1
+delta = true
+source = "watchdog"
+
+[metrics.86]
+name = "sandbox.denied_flows"
+unit = "count"
+scale = 1
+delta = true
+source = "D1"
+
+[metrics.87]
+name = "sandbox.canary_hits"
+unit = "count"
+scale = 1
+delta = true
+source = "D3, D4"
+
+[metrics.88]
+name = "sandbox.vmm_violations"
+unit = "count"
+scale = 1
+delta = true
+source = "D5, D6, D7"
+
+[metrics.89]
+name = "sandbox.quarantined_ckpts"
+unit = "count"
+scale = 1
+delta = false
+source = "watchdog"
