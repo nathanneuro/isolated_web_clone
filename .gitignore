@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# ---------------------------------------------------------------------------
+# Never publish: real internet data, and the code that touches the internet.
+# This repo is the harness, specs, prompts, and skill docs only. See README
+# "What is deliberately not here".
+# ---------------------------------------------------------------------------
+
+# Scraped corpora, explorer traces, reconstructed packages, seed DBs.
+data/
+
+# The scraper and the functional web explorer. They hit the real internet and
+# need per-deployment judgement about robots, terms, and rate limits.
+# `skills/site-reconstruct/SKILL.md` documents the input layout they must emit.
+tools/scraper/
+tools/explorer/
+private/
+
+# Raw Claude.ai conversation export (design provenance, kept local).
+docs/source-conversation/
+
+# ---------------------------------------------------------------------------
+# Build and run artifacts
+# ---------------------------------------------------------------------------
+out/
+outputs/
+*.bundle
+*.bundle.tar
+
+# Key material. Signing keys never enter the repo or the airgap.
+keys/
+*.key
+*.pem
