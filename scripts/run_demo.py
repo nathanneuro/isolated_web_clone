@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,7 @@ from tools.fake_demo_data_diode.__main__ import EGRESS_FRAME_BYTES  # noqa: E402
 from tools.golive import GoLiveService  # noqa: E402
 from tools.receiver import Receiver  # noqa: E402
 from tools.registry import SiteRegistry  # noqa: E402
+from tools.search_engine import FakeWebSearch  # noqa: E402
 from tools.worker import Worker  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,10 +75,13 @@ def main() -> int:
     run_control = RunControl()
     executor = CommandExecutor(run_dir / "command-inbox", receiver, registry, run_control, rotation_key_ids=frozenset())
 
+    engine = FakeWebSearch(registry)  # provisioned inside, like the model weights; never via the diode
+
     sender = EgressSender(load_registry(), EGRESS_KEY, run_id=1)
     telemetry = Telemetry(sender)
     for name, source in [("receiver", receiver.counters), ("worker", worker.counters),
-                         ("golive", golive.counters), ("registry", registry), ("run", run_control)]:
+                         ("golive", golive.counters), ("registry", registry), ("run", run_control),
+                         ("search", engine.counters)]:
         telemetry.attach(name, source)
     frames = FrameSpool(run_dir / "egress-transmit")
     egress_diode = FakeDemoDataDiode(run_dir / "egress-transmit", run_dir / "egress-receive", Direction.EGRESS,
@@ -126,8 +131,17 @@ def main() -> int:
     print(f"    registry: {record.hostname} -> {record.bundle_id} (live)")
     print("    what crossed back to the worker: integers and test IDs only")
 
+    step(5, "INSIDE", "fake-web search: mount live sites from the registry, query across them")
+    engine.refresh()
+    title = sqlite3.connect(EXAMPLE / "content" / "seed.sqlite").execute(
+        "SELECT title FROM threads WHERE id = 3").fetchone()[0]
+    hits = engine.search(title, limit=3)
+    print(f"    indexed sites {engine.counters.indexed_sites}; query from a seed title -> {len(hits)} hit(s)")
+    for hit in hits:
+        print(f"      {hit.site_id}  {hit.hostname}{hit.path}  score {hit.score}")
+
     # -- a command ------------------------------------------------------------------
-    step(5, "OUTSIDE", "dev command: start_run, signed with the dev key")
+    step(6, "OUTSIDE", "dev command: start_run, signed with the dev key")
     dev = load_signing_identity(keys / "dev-signing.key", "dev-demo", KeyRole.DEV)
     command = build_command_bundle(
         run_dir / "outbox", identity=dev, bundle_id="cmd-2026-09-14-0001", sequence=1,
@@ -138,7 +152,7 @@ def main() -> int:
     shutil.move(str(command), ingress_transmit / command.name)
     ingress_diode.tick()
 
-    step(6, "INSIDE", "receiver -> command executor -> run control")
+    step(7, "INSIDE", "receiver -> command executor -> run control")
     receipt = receiver.receive(run_dir / "inbox" / command.name)
     print(f"    receiver status {int(receipt.status)} ({receipt.status.name})")
     result = executor.run_once()
@@ -146,12 +160,13 @@ def main() -> int:
     print(f"    run control: {run_control.state.name} {run_control.run_id}")
 
     # -- and out --------------------------------------------------------------------
-    step(7, "EGRESS", "metrics socket -> frames -> diode (SIMULATED) -> reader -> dashboard")
+    step(8, "EGRESS", "metrics socket -> frames -> diode (SIMULATED) -> reader -> dashboard")
     for tick in range(1, 4):
         cross_out(tick * 60)
     print(f"    frames sent {sender.counters.frames_sent}, accepted {reader.counters.frames_accepted},"
           f" dropped {reader.counters.frames_dropped}, bad writes {sender.counters.bad_writes}")
-    for name in ("recv.bundles_ok", "worker.last_status_code", "golive.pass", "sites.live", "run.state"):
+    for name in ("recv.bundles_ok", "worker.last_status_code", "golive.pass", "sites.live",
+                 "search.indexed_sites", "run.state"):
         print(f"    {name:28s} {store.value(name)}")
 
     (run_dir / "metadata.json").write_text(

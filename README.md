@@ -82,7 +82,7 @@ skills/
   site-reconstruct/       outside agent: scrape -> spec + templates + seed DB + tests
   site-qa/                outside agent: adversarial checks before encryption
   inside-worker/          inside agent: verified bundle -> deployment, structure only
-                          (each SKILL.md names a references/ set that is not yet written)
+                          (each with the references/ files its SKILL.md names)
 tools/
   bundle_lint/            spec, suite, population, and choreography linter; runs outside
                           before signing and inside on receipt
@@ -97,8 +97,10 @@ tools/
   brokers/                the agent zone's only two reachable endpoints, and the sever gate
   inference_zone/         inside: model weights; reachable only via the action broker
   eval_harness/           Inspect AI task, solver, state-diff and reward scorers, run counters
-  population/             ambient liveness + eval choreography, deterministic, attributed
-  watchdog/               escape watchdog: detectors D1 D2 D3 D5, liveness, one-way halt
+  population/             ambient liveness + eval choreography; form_submit, vote, edit_own, delete_own
+  watchdog/               escape watchdog: detectors D1-D5, D8-D10, liveness, one-way halt
+  search_engine/          fake-web search across live sites, mounted from the registry
+  recon_check/            outside: the reconstructor's local lint + deploy + suite harness
   egress/                 numeric channel: frame, registry, sender, reader, metrics socket
   log_ingest/             log diode: record writer, framing, sanitiser, quarantine tier
 schemas/
@@ -177,13 +179,18 @@ remaining gaps are known and are not the design:
 
 - The zone split is in-process. The brokers are Python objects, not vsock endpoints,
   and the go-live sandbox is a directory, not a container or microVM.
-- Detectors D4 and D6 to D10 are not implemented. D1, D2, D3, D5, and D11 are.
-- The population driver implements `form_submit`; `vote`, `edit_own`, and
-  `delete_own` need update and delete mutation ops in the composer first.
-- Tier B (`compose-static-v1`), `recon-check`, and the `references/` files each
-  skill names are not written.
-- There is no corpus-wide search engine; each site serves its own BM25 shard.
-- The receiver's trust set is extended in memory by `rotate_verification_key`; a
-  deployment loads it from the control plane at start.
+- Detectors D6 and D7 are `LogPatternCounter` configurations over the audit log
+  rather than named classes; everything else in the sandbox spec's table exists.
+- Tier B (`compose-static-v1`) is not written. A Tier B bundle classifies
+  UNSUPPORTED inside.
+- The fake-web search engine is a library with `search(query)`; the env broker does
+  not yet route an agent's search to it, so an agent finds sites it is told about.
+- The population driver's content pools are passed decrypted; the bundle type that
+  ships them through the diode as encrypted blobs is not defined.
+
+What goes through the diode is content: site bundles, their ongoing revisions,
+and signed commands. Infrastructure (the search engine, the brokers, the
+watchdog, model weights) is installed inside before evals begin, by the wired
+terminal and physical media, and is updated the same way.
 
 Issues and pull requests welcome, especially findings against the invariants above.
