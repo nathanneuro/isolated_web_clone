@@ -169,8 +169,14 @@ control plane rather than against a site, and is never readable by a site app.
 
 ### 4.3 Ambient population spec (pipeline-signed, ships with the site)
 
-Sketch, subject to the same lint rules as the site spec — identifiers, enums, and
-numbers, no free text, nothing longer than the caps:
+Ships as `spec/population.json` in the site bundle, beside `spec/site.json`, and
+is linted with the same rules at build and on receipt (`bundle-lint`
+`lint_population`). Its content pools are encrypted blobs with role `page_text`;
+go-live decrypts them into the serving sandbox beside the site, and the driver
+inside is constructed from the sandbox alone. A revision of the population is a
+revision of the site bundle, which is how it gets updated: through the diode,
+like all content. Subject to the same lint rules as the site spec — identifiers,
+enums, and numbers, no free text, nothing longer than the caps:
 
 ```json
 {

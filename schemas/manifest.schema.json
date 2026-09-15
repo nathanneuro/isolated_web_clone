@@ -19,12 +19,12 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(spec/site\\.json|tests/suite\\.json|content/[0-9a-f]{64}\\.blob|index/[0-9a-f]{64}\\.shard)$"
+          "pattern": "^(spec/site\\.json|spec/population\\.json|tests/suite\\.json|content/[0-9a-f]{64}\\.blob|index/[0-9a-f]{64}\\.shard)$"
         },
         "blake3": { "$ref": "#/$defs/blake3" },
         "bytes": { "type": "integer", "minimum": 0, "maximum": 137438953472 },
         "role": {
-          "enum": ["spec", "suite", "page_text", "db_seed", "template", "asset", "fixtures", "bm25_shard", "run_config"]
+          "enum": ["spec", "suite", "population", "page_text", "db_seed", "template", "asset", "fixtures", "bm25_shard", "run_config"]
         }
       }
     },

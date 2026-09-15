@@ -76,6 +76,7 @@ def broker_web_agent(
                 if action.kind is ActionKind.STOP:
                     break
                 view = env.apply(action, view.elements)
+                episode.tick(step)  # population activity, attributed and excluded from scoring
                 if counters is not None:
                     counters.step = step + 1
 

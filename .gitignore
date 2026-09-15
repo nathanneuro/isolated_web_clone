@@ -51,3 +51,6 @@ models/
 
 # Hypothesis example database (machine-local)
 .hypothesis/
+
+# Generated example population pool (same generator)
+example/synthetic_site/content/pools/

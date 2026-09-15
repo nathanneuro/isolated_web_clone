@@ -6,7 +6,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tools.bundle_lint import Finding, lint_spec, lint_suite
+from tools.bundle_lint import Finding, lint_population, lint_spec, lint_suite
 from tools.compose_fastapi_sqlite_v1 import ComposeError, classify_spec, compose_app
 from tools.golive.runner import run_suite
 
@@ -61,11 +61,15 @@ def check_package(package_dir: Path) -> CheckReport:
     # Lint what bundle-build will lint: the spec with its logical slot paths
     # rewritten to handles. The handles are hashes of the plaintext rather than
     # of ciphertext, which is fine, because lint checks shape and role, not bytes.
-    linted_spec, linted_suite, manifest_files, missing = _as_built(package_dir, spec, suite)
+    population_path = package_dir / "spec" / "population.json"
+    population = json.loads(population_path.read_text()) if population_path.exists() else None
+    linted_spec, linted_suite, linted_population, manifest_files, missing = _as_built(package_dir, spec, suite, population)
     report.lint = [Finding("LINT-REF-01", pointer) for pointer in missing]
     report.lint += lint_spec(linted_spec, manifest_files)
     if linted_suite is not None:
         report.lint += lint_suite(linted_suite, linted_spec, manifest_files)
+    if linted_population is not None:
+        report.lint += lint_population(linted_population, linted_spec, manifest_files)
     report.lint = sorted(set(report.lint))
     if report.lint:
         return report
@@ -89,7 +93,7 @@ def check_package(package_dir: Path) -> CheckReport:
     return report
 
 
-def _as_built(package_dir: Path, spec: dict, suite: dict | None):
+def _as_built(package_dir: Path, spec: dict, suite: dict | None, population: dict | None):
     """Rewrite slot paths to handles the way bundle-build will, without encrypting."""
     import copy
 
@@ -97,10 +101,11 @@ def _as_built(package_dir: Path, spec: dict, suite: dict | None):
 
     from tools.bundle_build.build import _set, find_slots
 
-    spec, suite = copy.deepcopy(spec), copy.deepcopy(suite)
+    spec, suite, population = copy.deepcopy(spec), copy.deepcopy(suite), copy.deepcopy(population)
+    documents = {"spec": spec, "suite": suite, "population": population}
     manifest_files: dict[str, str] = {}
     missing: list[str] = []
-    for slot in find_slots(spec, suite):
+    for slot in find_slots(spec, suite, population):
         source = package_dir / slot.logical
         if not source.is_file():
             missing.append("/" + "/".join(map(str, slot.pointer)))
@@ -109,5 +114,5 @@ def _as_built(package_dir: Path, spec: dict, suite: dict | None):
         subdir, suffix = ("index", "shard") if slot.role == "bm25_shard" else ("content", "blob")
         handle = f"{subdir}/{digest}.{suffix}"
         manifest_files[handle] = slot.role
-        _set(spec if slot.document == "spec" else suite, slot.pointer, handle)
-    return spec, suite, manifest_files, missing
+        _set(documents[slot.document], slot.pointer, handle)
+    return spec, suite, population, manifest_files, missing

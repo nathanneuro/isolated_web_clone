@@ -23,8 +23,10 @@ resource consumption.
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 
 from tools.compose_fastapi_sqlite_v1 import WRITER_HEADER
@@ -231,6 +233,27 @@ class PopulationDriver:
         self._rng = random.Random(int.from_bytes(digest, "big"))
         self._routes = {r["id"]: r for r in spec["routes"]}
         self._forms = {f["id"]: f for f in spec.get("forms", [])}
+
+    @classmethod
+    def from_sandbox(cls, sandbox: Path, client, *, run_id: str, episode_id: str, **kw) -> PopulationDriver | None:
+        """The inside constructor: spec, population document, and pools, all from
+        the serving sandbox go-live produced. None if the site ships no population."""
+        sandbox = Path(sandbox)
+        population_path = sandbox / "spec" / "population.json"
+        if not population_path.is_file():
+            return None
+        spec = json.loads((sandbox / "spec" / "site.json").read_text())
+        population = Population.from_document(json.loads(population_path.read_text()))
+        pools = {
+            pool.id: json.loads((sandbox / pool.blob_ref).read_text())
+            for pool in population.content_pools
+        }
+        for pool in population.content_pools:
+            assert isinstance(pools[pool.id], list) and len(pools[pool.id]) == pool.row_count, (
+                f"pool {pool.id}: declared {pool.row_count} rows, blob holds {len(pools[pool.id])}"
+            )
+        return cls(client, spec, run_id=run_id, episode_id=episode_id, site_id=population.site_id,
+                   population=population, pools=pools, **kw)
 
     # -- public ------------------------------------------------------------
 

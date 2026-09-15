@@ -151,8 +151,10 @@ class Worker:
             # cannot go live. Nothing in this generator ships an untested site.
             return self._fail(bundle_id, WorkerStatus.COMPOSE_FAILED, UNSUPPORTED_ELEMENT)
         suite = json.loads(suite_path.read_text())
+        population_path = source / "spec" / "population.json"
+        population = json.loads(population_path.read_text()) if population_path.is_file() else None
         roles = {entry["path"]: entry["role"] for entry in manifest["files"]}
-        slots = find_slots(spec, suite)
+        slots = find_slots(spec, suite, population)
         for slot in slots:
             if roles.get(slot.logical) != slot.role:
                 return self._fail(bundle_id, WorkerStatus.COMPOSE_FAILED, MOUNT_INCONSISTENT)
@@ -173,7 +175,7 @@ class Worker:
             shutil.rmtree(deployment)
         shutil.copytree(source, deployment)
         slot_map = {slot.logical: {"role": slot.role, "slot": "/".join(map(str, slot.pointer))} for slot in slots}
-        blobs = {path for path, role in roles.items() if role not in ("spec", "suite")}
+        blobs = {path for path, role in roles.items() if role not in ("spec", "suite", "population")}
         if set(slot_map) != blobs:
             return self._fail(bundle_id, WorkerStatus.COMPOSE_FAILED, SLOT_MAP_INCONSISTENT)
         (deployment / "slots.json").write_text(json.dumps(slot_map, indent=1, sort_keys=True))

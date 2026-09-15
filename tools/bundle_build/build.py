@@ -27,7 +27,7 @@ from blake3 import blake3
 from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_encrypt
 from nacl.public import SealedBox
 
-from tools.bundle_lint import lint_spec, lint_suite
+from tools.bundle_lint import lint_population, lint_spec, lint_suite
 
 from .keys import KeyRole, SigningIdentity, load_golive_public_key
 
@@ -74,13 +74,16 @@ def _set(doc: object, pointer: tuple[str | int, ...], value: object) -> None:
     doc[pointer[-1]] = value
 
 
-def find_slots(spec: dict, suite: dict | None) -> list[Slot]:
+def find_slots(spec: dict, suite: dict | None, population: dict | None = None) -> list[Slot]:
     """Every blob-bearing slot, derived from the spec's own shape.
 
     Roles come from the slot, never from the reconstructor, so a package cannot
     declare a template to be a db_seed and have it encrypted under the wrong AAD.
     """
     slots: list[Slot] = []
+    for i, pool in enumerate((population or {}).get("content_pools", [])):
+        # What a bot says is page text: encrypted, and never read by the worker.
+        slots.append(Slot("population", ("content_pools", i, "blob_ref"), pool["blob_ref"], "page_text"))
     for i, template in enumerate(spec.get("templates", [])):
         slots.append(Slot("spec", ("templates", i, "blob_ref"), template["blob_ref"], "template"))
     for i, asset in enumerate(spec.get("assets", [])):
@@ -129,6 +132,8 @@ def build_bundle(
     spec = json.loads((package_dir / "spec" / "site.json").read_text())
     suite_path = package_dir / "tests" / "suite.json"
     suite = json.loads(suite_path.read_text()) if suite_path.exists() else None
+    population_path = package_dir / "spec" / "population.json"
+    population = json.loads(population_path.read_text()) if population_path.exists() else None
 
     site_id, revision = meta["site_id"], meta["revision"]
     bundle_id = f"{site_id}-r{revision}"
@@ -145,7 +150,7 @@ def build_bundle(
 
     try:
         return _build(
-            staging, spec, suite, meta, bundle_id, site_id, revision, package_dir,
+            staging, spec, suite, population, meta, bundle_id, site_id, revision, package_dir,
             identity, golive_public_key_path, sequence, content_key, output_dir,
         )
     except Exception:
@@ -156,14 +161,15 @@ def build_bundle(
 
 
 def _build(
-    staging, spec, suite, meta, bundle_id, site_id, revision, package_dir,
+    staging, spec, suite, population, meta, bundle_id, site_id, revision, package_dir,
     identity, golive_public_key_path, sequence, content_key, output_dir,
 ) -> Path:
 
     files: list[dict] = []
     written: dict[str, str] = {}  # logical path -> handle, so shared blobs dedup
+    documents = {"spec": spec, "suite": suite, "population": population}
 
-    for slot in find_slots(spec, suite):
+    for slot in find_slots(spec, suite, population):
         source = package_dir / slot.logical
         if not source.is_file():
             raise BuildError(f"slot {slot.pointer} points at missing file {slot.logical}")
@@ -183,20 +189,25 @@ def _build(
                 {"path": handle, "blake3": digest, "bytes": len(blob), "role": slot.role}
             )
 
-        document = spec if slot.document == "spec" else suite
-        _set(document, slot.pointer, handle)
+        _set(documents[slot.document], slot.pointer, handle)
 
     manifest_files = {entry["path"]: entry["role"] for entry in files}
     findings = lint_spec(spec, manifest_files)
     if suite is not None:
         findings += lint_suite(suite, spec, manifest_files)
+    if population is not None:
+        findings += lint_population(population, spec, manifest_files)
     if findings:
         raise BuildError(
             "lint rejected the rewritten package: "
             + ", ".join(f"{f.code}@{f.location}" for f in findings)
         )
 
-    for relative, document in (("spec/site.json", spec), ("tests/suite.json", suite)):
+    for relative, document, role in (
+        ("spec/site.json", spec, "spec"),
+        ("spec/population.json", population, "population"),
+        ("tests/suite.json", suite, "suite"),
+    ):
         if document is None:
             continue
         target = staging / relative
@@ -204,12 +215,7 @@ def _build(
         payload = canonical_json(document)
         target.write_bytes(payload)
         files.append(
-            {
-                "path": relative,
-                "blake3": blake3(payload).hexdigest(),
-                "bytes": len(payload),
-                "role": "spec" if relative.startswith("spec/") else "suite",
-            }
+            {"path": relative, "blake3": blake3(payload).hexdigest(), "bytes": len(payload), "role": role}
         )
 
     sealed = SealedBox(load_golive_public_key(golive_public_key_path)).encrypt(content_key)

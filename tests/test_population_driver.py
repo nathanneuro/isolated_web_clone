@@ -215,3 +215,113 @@ class TestScoreIsUnmoved:
             return count_agent_rows(str(ep.db_path), question.gold)
 
         assert episode(False) == episode(True) == 0
+
+
+class TestThroughTheDiode:
+    """The population ships with the site: linted at build and receipt, its pools
+    encrypted, decrypted by go-live, and driven inside from the sandbox alone."""
+
+    @pytest.fixture
+    def inside(self, tmp_path):
+        from nacl.signing import VerifyKey
+
+        from tools.bundle_build import build_bundle
+        from tools.bundle_build.keys import KeyRole, generate_demo_keyset, load_signing_identity
+        from tools.golive import GoLiveService
+        from tools.receiver import Receiver
+        from tools.registry import SiteRegistry
+        from tools.worker import Worker
+
+        keys = tmp_path / "keys"
+        generate_demo_keyset(keys)
+        receiver = Receiver(
+            tmp_path / "state", tmp_path / "inbox", tmp_path / "commands", tmp_path / "quarantine",
+            {"pipeline-demo": (VerifyKey((keys / "pipeline-verify.pub").read_bytes()), frozenset({"site", "index_only"}))},
+        )
+        registry = SiteRegistry(tmp_path / "registry.json")
+        worker = Worker(tmp_path / "inbox", tmp_path / "work", GoLiveService(keys / "golive-wrapping.key", tmp_path / "sb"), registry)
+
+        def ship(mutate=None, sequence=1):
+            package = tmp_path / f"pkg-{sequence}"
+            shutil.copytree(EXAMPLE, package)
+            if mutate:
+                mutate(package)
+            identity = load_signing_identity(keys / "pipeline-signing.key", "pipeline-demo", KeyRole.PIPELINE)
+            archive = build_bundle(package, tmp_path / f"out-{sequence}", identity=identity,
+                                   golive_public_key_path=keys / "golive-wrapping.pub", sequence=sequence)
+            return receiver.receive(archive)
+
+        return ship, worker, registry
+
+    def test_population_arrives_and_drives_from_the_sandbox(self, inside, tmp_path):
+        ship, worker, registry = inside
+        receipt = ship()
+        assert receipt.accepted, receipt.detail
+        assert worker.run_once().status_code == 40
+        sandbox = Path(registry.live_sites()[0].deployment)
+        assert (sandbox / "spec" / "population.json").is_file()
+        pool_ref = json.loads((sandbox / "spec" / "population.json").read_text())["content_pools"][0]["blob_ref"]
+        assert (sandbox / pool_ref).is_file(), "the pool was decrypted beside the site"
+        ciphertext = next((tmp_path / "work").rglob(Path(pool_ref).name)).read_bytes()
+        assert ciphertext != (sandbox / pool_ref).read_bytes(), "the worker's copy is ciphertext"
+
+        from tools.brokers import BrokerGate
+        from tools.eval_harness import EvalQuestion, GoldState, MultiSiteEnvFactory
+        from tools.eval_harness.scorer import count_agent_rows
+
+        factory = MultiSiteEnvFactory(registry, tmp_path / "eps", gate=BrokerGate(), run_id="r1")
+        question = EvalQuestion(id="q", task="do nothing", site_id="site-000001", gold=GoldState(table="replies"), max_steps=3)
+        with factory.episode(question, "e1") as ep:
+            assert list(ep.drivers) == ["site-000001"]
+            ep.env.observe()
+            for step in range(6):
+                ep.tick(step)
+            driver = ep.drivers["site-000001"]
+            assert driver.counters.actions_performed > 0, "the shipped population did nothing"
+            writers = {r[0] for r in sqlite3.connect(ep.db_path).execute(
+                "SELECT DISTINCT writer FROM replies WHERE writer IS NOT NULL")}
+            assert writers == {"c_regulars"}
+            assert count_agent_rows(str(ep.db_path), question.gold) == 0, "animation moved the score"
+
+    def test_population_naming_an_unknown_form_is_rejected_at_build(self, inside):
+        from tools.bundle_build import BuildError
+
+        ship, *_ = inside
+
+        def mutate(package: Path) -> None:
+            doc = json.loads((package / "spec" / "population.json").read_text())
+            doc["cohorts"][1]["behaviours"][0]["form"] = "f_missing"
+            (package / "spec" / "population.json").write_text(json.dumps(doc))
+
+        with pytest.raises(BuildError, match="LINT-XREF-02"):
+            ship(mutate)
+
+    def test_pool_with_the_wrong_row_count_is_refused_inside(self, inside, tmp_path):
+        """The declared count is structure; the blob is content. They must agree."""
+        ship, worker, registry = inside
+
+        def mutate(package: Path) -> None:
+            doc = json.loads((package / "spec" / "population.json").read_text())
+            doc["content_pools"][0]["row_count"] = 7
+            (package / "spec" / "population.json").write_text(json.dumps(doc))
+
+        assert ship(mutate).accepted
+        assert worker.run_once().status_code == 40
+        from tools.population import PopulationDriver
+
+        sandbox = Path(registry.live_sites()[0].deployment)
+        with pytest.raises(AssertionError, match="declared 7 rows"):
+            PopulationDriver.from_sandbox(sandbox, object(), run_id="r", episode_id="e")
+
+    def test_a_site_without_a_population_is_still_a_site(self, inside):
+        ship, worker, registry = inside
+
+        def mutate(package: Path) -> None:
+            (package / "spec" / "population.json").unlink()
+            shutil.rmtree(package / "content" / "pools")
+
+        assert ship(mutate).accepted
+        assert worker.run_once().status_code == 40
+        from tools.population import PopulationDriver
+
+        assert PopulationDriver.from_sandbox(Path(registry.live_sites()[0].deployment), object(), run_id="r", episode_id="e") is None

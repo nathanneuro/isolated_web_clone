@@ -40,7 +40,10 @@ A bundle is a tar archive (uncompressed at the top level; individual blobs may b
 ├── manifest.json            # plaintext, signed (§4)
 ├── manifest.sig             # Ed25519 signature over manifest.json bytes
 ├── spec/
-│   └── site.json            # plaintext structure (§6)
+│   ├── site.json            # plaintext structure (§6)
+│   └── population.json      # optional: ambient population, plaintext structure
+│                            #   (synthetic-population-spec §4.3); its pools are
+│                            #   content blobs with role page_text
 ├── tests/
 │   └── suite.json           # plaintext test structure (§7)
 ├── content/

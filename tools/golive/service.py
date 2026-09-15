@@ -128,7 +128,7 @@ class GoLiveService:
         roles = {entry["path"]: entry["role"] for entry in manifest["files"]}
         fixtures: dict = {}
         for path, role in sorted(roles.items()):
-            if role in ("spec", "suite"):
+            if role in ("spec", "suite", "population"):
                 continue
             blob = (deployment_dir / path).read_bytes()
             if blake3(blob).hexdigest() != path.split("/")[1].split(".")[0]:
@@ -153,8 +153,22 @@ class GoLiveService:
         # sandbox alone and never has to look at a bundle.
         (sandbox / "spec").mkdir(exist_ok=True)
         (sandbox / "spec" / "site.json").write_text(json.dumps(spec, sort_keys=True))
-        site = compose_app(spec, sandbox, sandbox / spec["db"]["seed_blob_ref"])
-        results = run_suite(site, suite, spec, fixtures)
+        population_path = deployment_dir / "spec" / "population.json"
+        if population_path.is_file():
+            # Structure, like the spec: the driver inside reads it from the sandbox
+            # and finds its pools beside it, decrypted with everything else.
+            (sandbox / "spec" / "population.json").write_bytes(population_path.read_bytes())
+        # The suite runs against a scratch copy of the seed. The seed the sandbox
+        # serves stays exactly what the bundle carried; a go-live check must not
+        # become a row every episode inherits.
+        seed = sandbox / spec["db"]["seed_blob_ref"]
+        scratch = sandbox / "golive-suite.sqlite"
+        shutil.copyfile(seed, scratch)
+        try:
+            site = compose_app(spec, sandbox, scratch)
+            results = run_suite(site, suite, spec, fixtures)
+        finally:
+            scratch.unlink(missing_ok=True)
 
         fixtures.clear()  # step 7: destroy the fixture plaintext
 

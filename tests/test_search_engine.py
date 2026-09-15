@@ -50,6 +50,9 @@ def go_live(tmp_path, keys, receiver, worker, site_number: int, sequence: int) -
     spec = json.loads((package / "spec" / "site.json").read_text())
     spec["site_id"], spec["hostname"] = site_id, f"{site_id}.internal"
     (package / "spec" / "site.json").write_text(json.dumps(spec))
+    population = json.loads((package / "spec" / "population.json").read_text())
+    population["site_id"], population["population_id"] = site_id, f"{site_id}-pop-r1"
+    (package / "spec" / "population.json").write_text(json.dumps(population))
     suite = json.loads((package / "tests" / "suite.json").read_text())
     suite["suite_id"] = f"{site_id}-r1-tests"
     (package / "tests" / "suite.json").write_text(json.dumps(suite))

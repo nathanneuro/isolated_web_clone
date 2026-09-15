@@ -323,6 +323,12 @@ def lint_bundle(bundle_dir: Path) -> list[Finding]:
     spec = json.loads((bundle_dir / "spec" / "site.json").read_text())
     findings = lint_spec(spec, manifest_files)
 
+    population_path = bundle_dir / "spec" / "population.json"
+    if population_path.exists():
+        from .population import lint_population
+
+        findings += lint_population(json.loads(population_path.read_text()), spec, manifest_files)
+
     suite_path = bundle_dir / "tests" / "suite.json"
     if manifest["type"] == "index_only" and not suite_path.exists():
         return sorted(set(findings))

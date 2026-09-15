@@ -1,0 +1,33 @@
+{
+  "population_id": "site-000001-pop-r1",
+  "site_id": "site-000001",
+  "cohorts": [
+    {
+      "id": "c_lurkers",
+      "user_count": 400,
+      "behaviours": []
+    },
+    {
+      "id": "c_regulars",
+      "user_count": 60,
+      "behaviours": [
+        {
+          "id": "b_reply",
+          "action": "form_submit",
+          "form": "f_reply",
+          "route": "r_reply",
+          "content_pool": "cp_replies",
+          "rate_per_hour": 20,
+          "distribution": "poisson"
+        }
+      ]
+    }
+  ],
+  "content_pools": [
+    {
+      "id": "cp_replies",
+      "blob_ref": "content/pools/replies.json",
+      "row_count": 40
+    }
+  ]
+}

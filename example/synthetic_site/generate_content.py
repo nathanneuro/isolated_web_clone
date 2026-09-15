@@ -142,6 +142,15 @@ def build_fixtures(path: Path, threads: list[dict], fake: Faker) -> None:
     )
 
 
+def build_pool(path: Path, fake: Faker, rows: int) -> None:
+    """A content pool for the ambient population: what the bots say. Invented, like
+    everything else here; in the real pipeline these rows are scraped text too."""
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(
+        [{"body": fake.sentence(nb_words=8), "author": fake.user_name()} for _ in range(rows)], indent=1
+    ))
+
+
 def main() -> None:
     fake = Faker()
     Faker.seed(SEED)
@@ -150,6 +159,7 @@ def main() -> None:
     threads = build_seed_db(HERE / "content" / "seed.sqlite", fake)
     build_shard(HERE / "index" / "main.shard", threads)
     build_fixtures(HERE / "content" / "fixtures.json", threads, fake)
+    build_pool(HERE / "content" / "pools" / "replies.json", fake, rows=40)
 
     print(f"site: {SITE_NAME}")
     print(f"  threads:   {len(threads)}")
