@@ -17,7 +17,7 @@
           "form": "f_reply",
           "route": "r_reply",
           "content_pool": "cp_replies",
-          "rate_per_hour": 20,
+          "rate_per_hour": 3,
           "distribution": "poisson"
         }
       ]

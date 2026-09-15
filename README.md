@@ -94,12 +94,15 @@ tools/
   golive/                 inside: unwrap key, decrypt into sandbox, compose, run suite, codes
   registry/               inside control plane: live revision per hostname, supersede, retire
   command_executor/       inside: signed dev commands -> run control, registry, receiver trust
-  brokers/                the agent zone's only two reachable endpoints, and the sever gate
+  brokers/                the agent zone's only two reachable endpoints; cross-site via the
+                          registry and fake-web search; the zone control gate
   inference_zone/         inside: model weights; reachable only via the action broker
-  eval_harness/           Inspect AI task, solver, state-diff and reward scorers, run counters
+  eval_harness/           Inspect AI task, solver, state-diff and reward scorers, run counters;
+                          single-site and registry-backed multi-site episode factories
   population/             ambient liveness + eval choreography; form_submit, vote, edit_own, delete_own
   watchdog/               escape watchdog: detectors D1-D5, D8-D10, liveness, one-way halt
-  search_engine/          fake-web search across live sites, mounted from the registry
+  search_engine/          fake-web search across live sites, mounted from the registry;
+                          installed inside like model weights, never via the diode
   recon_check/            outside: the reconstructor's local lint + deploy + suite harness
   egress/                 numeric channel: frame, registry, sender, reader, metrics socket
   log_ingest/             log diode: record writer, framing, sanitiser, quarantine tier
@@ -150,10 +153,12 @@ so swapping in real one-way hardware changes nothing but the endpoints. Read the
 package docstring before deploying anything.
 
 Expected from `run_demo.py`: one bundle received, composed, passed go-live,
-registered; a `start_run` applied; `sites.live = 1` and `run.state = 1` on the
-dev-side store. Expected from `run_eval_demo.py`: two episodes scored, their
-trajectories promoted on the logging side, and then a canary trip that halts the
-run and flips `sandbox.escape_indicator` on the dashboard.
+registered and indexed; a `start_run` applied; `sites.live = 1` and
+`run.state = 1` on the dev-side store. Expected from `run_eval_demo.py`: the same
+ingress, then two episodes on the multi-site factory with the site's shipped
+population posting alongside the agent and scored as nobody's, trajectories
+promoted on the logging side, and a canary trip that halts the run and flips
+`sandbox.escape_indicator` on the dashboard.
 
 ## What is deliberately not here
 
@@ -183,10 +188,9 @@ remaining gaps are known and are not the design:
   rather than named classes; everything else in the sandbox spec's table exists.
 - Tier B (`compose-static-v1`) is not written. A Tier B bundle classifies
   UNSUPPORTED inside.
-- The fake-web search engine is a library with `search(query)`; the env broker does
-  not yet route an agent's search to it, so an agent finds sites it is told about.
-- The population driver's content pools are passed decrypted; the bundle type that
-  ships them through the diode as encrypted blobs is not defined.
+- Eval choreography (the dev-signed per-question schedule) is a linted document
+  and a driver input, but no bundle type carries it through the diode yet; the
+  ambient population does travel with its site.
 
 What goes through the diode is content: site bundles, their ongoing revisions,
 and signed commands. Infrastructure (the search engine, the brokers, the
