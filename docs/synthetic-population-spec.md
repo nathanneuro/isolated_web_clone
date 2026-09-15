@@ -226,6 +226,14 @@ Three things to notice, because each is doing work:
 
 ### 4.4 Eval choreography (dev-signed, ships with the eval definition)
 
+Ships as its own bundle type, `eval`: dev-signed, with `spec/choreography.json`
+as structure and its pools as `page_text` blobs under a wrapped content key. The
+receiver dispatches it to an eval inbox; intake (`tools/eval_intake`) unseals it
+through go-live, checks it against the *live* spec of the site it names, and
+files it by question id. A choreography for a site that is not live waits; one
+that names a form the live site lacks is refused with a code. A newer revision
+replaces the filed one.
+
 The researcher's layer. It names specific users, specific affordances, and an
 explicit schedule, because a question that depends on *when* something happens needs
 the when to be stated rather than sampled.

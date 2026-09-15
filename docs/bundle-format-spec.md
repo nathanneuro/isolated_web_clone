@@ -56,6 +56,10 @@ A bundle is a tar archive (uncompressed at the top level; individual blobs may b
 
 For `type: "command"` bundles (§9), `spec/`, `tests/`, `content/`, and `index/` are absent.
 
+For `type: "eval"` bundles (synthetic-population-spec §4.4), `spec/` holds
+`choreography.json` instead of `site.json`, `content/` holds its pools, and
+`tests/` and `index/` are absent. They are dev-signed and carry a wrapped key.
+
 ---
 
 ## 4. Manifest and signing

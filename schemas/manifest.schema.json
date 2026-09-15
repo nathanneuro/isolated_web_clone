@@ -19,12 +19,12 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(spec/site\\.json|spec/population\\.json|tests/suite\\.json|content/[0-9a-f]{64}\\.blob|index/[0-9a-f]{64}\\.shard)$"
+          "pattern": "^(spec/site\\.json|spec/population\\.json|spec/choreography\\.json|tests/suite\\.json|content/[0-9a-f]{64}\\.blob|index/[0-9a-f]{64}\\.shard)$"
         },
         "blake3": { "$ref": "#/$defs/blake3" },
         "bytes": { "type": "integer", "minimum": 0, "maximum": 137438953472 },
         "role": {
-          "enum": ["spec", "suite", "population", "page_text", "db_seed", "template", "asset", "fixtures", "bm25_shard", "run_config"]
+          "enum": ["spec", "suite", "population", "choreography", "page_text", "db_seed", "template", "asset", "fixtures", "bm25_shard", "run_config"]
         }
       }
     },
@@ -74,8 +74,8 @@
   "required": ["format_version", "bundle_id", "type", "sequence", "created_at", "signer_key_id", "files"],
   "properties": {
     "format_version": { "enum": ["0.1"] },
-    "bundle_id": { "type": "string", "pattern": "^(site-[0-9]{6}-r[0-9]{1,4}|cmd-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})$" },
-    "type": { "enum": ["site", "index_only", "command"] },
+    "bundle_id": { "type": "string", "pattern": "^(site-[0-9]{6}-r[0-9]{1,4}|cmd-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}|eval-[a-z0-9][a-z0-9-]{2,62}-r[0-9]{1,4})$" },
+    "type": { "enum": ["site", "index_only", "command", "eval"] },
     "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "created_at": { "$ref": "#/$defs/timestamp" },
     "signer_key_id": { "$ref": "#/$defs/key_id" },
@@ -89,6 +89,21 @@
   },
 
   "allOf": [
+    {
+      "description": "eval bundles (synthetic-population-spec §4.4) carry a choreography and its pools under a wrapped key; dev-signed; no site fields, no command.",
+      "if": { "properties": { "type": { "const": "eval" } }, "required": ["type"] },
+      "then": {
+        "required": ["content_key_wrapped"],
+        "properties": { "files": { "minItems": 1 } },
+        "not": { "anyOf": [
+          { "required": ["command"] },
+          { "required": ["site_id"] },
+          { "required": ["revision"] },
+          { "required": ["tier"] },
+          { "required": ["supersedes"] }
+        ]}
+      }
+    },
     {
       "description": "§4.4 — site and index_only bundles carry content and a wrapped key; they never carry a command.",
       "if": { "properties": { "type": { "enum": ["site", "index_only"] } }, "required": ["type"] },

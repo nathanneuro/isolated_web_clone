@@ -103,13 +103,15 @@ class Receiver:
         command_inbox: Path,
         quarantine: Path,
         verify_keys: dict[str, tuple[VerifyKey, frozenset[str]]],
+        eval_inbox: Path | None = None,
     ) -> None:
         self.state_dir = Path(state_dir)
         self.worker_inbox = Path(worker_inbox)
         self.command_inbox = Path(command_inbox)
+        self.eval_inbox = Path(eval_inbox) if eval_inbox else self.state_dir / "eval-inbox"
         self.quarantine = Path(quarantine)
         self.verify_keys = verify_keys
-        for directory in (self.state_dir, self.worker_inbox, self.command_inbox, self.quarantine):
+        for directory in (self.state_dir, self.worker_inbox, self.command_inbox, self.eval_inbox, self.quarantine):
             directory.mkdir(parents=True, exist_ok=True)
         self._sequence_file = self.state_dir / "sequence-high-water.json"
         self._trust_file = self.state_dir / "rotated-verify-keys.json"
@@ -293,9 +295,8 @@ class Receiver:
     def _dispatch(self, unpacked: Path) -> None:
         """Step 6. Dispatches on `type` and nothing else (§4.4)."""
         manifest = json.loads((unpacked / "manifest.json").read_text())
-        destination = (
-            self.command_inbox if manifest["type"] == "command" else self.worker_inbox
-        ) / manifest["bundle_id"]
+        inbox = {"command": self.command_inbox, "eval": self.eval_inbox}.get(manifest["type"], self.worker_inbox)
+        destination = inbox / manifest["bundle_id"]
         if destination.exists():
             _rmtree(destination)
         unpacked.rename(destination)

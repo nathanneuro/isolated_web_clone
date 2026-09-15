@@ -319,6 +319,13 @@ def lint_bundle(bundle_dir: Path) -> list[Finding]:
 
     if manifest["type"] == "command":
         return []  # command bundles have no spec/ or tests/ (§3, §9)
+    if manifest["type"] == "eval":
+        from .population import lint_choreography
+
+        # The site spec is not in this bundle; the cross-check against the live
+        # site happens at intake, inside, against the registry.
+        doc = json.loads((bundle_dir / "spec" / "choreography.json").read_text())
+        return sorted(set(lint_choreography(doc, None, manifest_files)))
 
     spec = json.loads((bundle_dir / "spec" / "site.json").read_text())
     findings = lint_spec(spec, manifest_files)

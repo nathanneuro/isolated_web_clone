@@ -235,25 +235,34 @@ class PopulationDriver:
         self._forms = {f["id"]: f for f in spec.get("forms", [])}
 
     @classmethod
-    def from_sandbox(cls, sandbox: Path, client, *, run_id: str, episode_id: str, **kw) -> PopulationDriver | None:
+    def from_sandbox(
+        cls, sandbox: Path, client, *, run_id: str, episode_id: str,
+        choreography_sandbox: Path | None = None, **kw,
+    ) -> PopulationDriver | None:
         """The inside constructor: spec, population document, and pools, all from
-        the serving sandbox go-live produced. None if the site ships no population."""
+        the serving sandbox go-live produced; optionally a filed choreography from
+        its own sandbox. None if there is neither."""
         sandbox = Path(sandbox)
-        population_path = sandbox / "spec" / "population.json"
-        if not population_path.is_file():
-            return None
         spec = json.loads((sandbox / "spec" / "site.json").read_text())
-        population = Population.from_document(json.loads(population_path.read_text()))
-        pools = {
-            pool.id: json.loads((sandbox / pool.blob_ref).read_text())
-            for pool in population.content_pools
-        }
-        for pool in population.content_pools:
-            assert isinstance(pools[pool.id], list) and len(pools[pool.id]) == pool.row_count, (
-                f"pool {pool.id}: declared {pool.row_count} rows, blob holds {len(pools[pool.id])}"
+        population_path = sandbox / "spec" / "population.json"
+        population = choreography = None
+        pools: dict[str, list[dict]] = {}
+        if population_path.is_file():
+            population = Population.from_document(json.loads(population_path.read_text()))
+            pools.update(_load_pools(sandbox, population.content_pools))
+        if choreography_sandbox is not None:
+            choreography_sandbox = Path(choreography_sandbox)
+            choreography = Choreography.from_document(
+                json.loads((choreography_sandbox / "spec" / "choreography.json").read_text())
             )
-        return cls(client, spec, run_id=run_id, episode_id=episode_id, site_id=population.site_id,
-                   population=population, pools=pools, **kw)
+            assert choreography.site_id == spec["site_id"], (
+                f"choreography is for {choreography.site_id}, sandbox is {spec['site_id']}"
+            )
+            pools.update(_load_pools(choreography_sandbox, choreography.content_pools))
+        if population is None and choreography is None:
+            return None
+        return cls(client, spec, run_id=run_id, episode_id=episode_id, site_id=spec["site_id"],
+                   population=population, choreography=choreography, pools=pools, **kw)
 
     # -- public ------------------------------------------------------------
 
@@ -405,3 +414,14 @@ class PopulationDriver:
         if not rows:
             return None
         return rows[index % len(rows)]
+
+
+def _load_pools(root: Path, declared: tuple[ContentPool, ...]) -> dict[str, list[dict]]:
+    pools: dict[str, list[dict]] = {}
+    for pool in declared:
+        rows = json.loads((root / pool.blob_ref).read_text())
+        assert isinstance(rows, list) and len(rows) == pool.row_count, (
+            f"pool {pool.id}: declared {pool.row_count} rows, blob holds {len(rows) if isinstance(rows, list) else '?'}"
+        )
+        pools[pool.id] = rows
+    return pools

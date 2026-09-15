@@ -109,7 +109,7 @@ class MultiSiteEnvFactory:
 
     def __init__(
         self, registry, work_dir: Path, gate: BrokerGate | None = None, web_search=None, *,
-        run_id: str = "run", animate: bool = True,
+        run_id: str = "run", animate: bool = True, definitions=None,
     ) -> None:
         self.registry = registry
         self.work_dir = Path(work_dir)
@@ -118,6 +118,7 @@ class MultiSiteEnvFactory:
         self.web_search = web_search
         self.run_id = run_id
         self.animate = animate  # start each site's population driver, if it ships one
+        self.definitions = definitions  # EvalDefinitions: filed choreographies by question id
         self.open_episodes: list[Episode] = []
 
     @contextmanager
@@ -153,9 +154,12 @@ class MultiSiteEnvFactory:
 
                     # The driver has its own client to the same app: it is another
                     # user of the site, not a passenger on the agent's session.
+                    choreography_sandbox = None
+                    if self.definitions is not None and record.site_id == question.site_id:
+                        choreography_sandbox = self.definitions.sandbox_for(question.id)
                     driver = PopulationDriver.from_sandbox(
                         sandbox, stack.enter_context(TestClient(site.app, base_url=f"http://{site.hostname}")),
-                        run_id=self.run_id, episode_id=episode_id,
+                        run_id=self.run_id, episode_id=episode_id, choreography_sandbox=choreography_sandbox,
                     )
                     if driver is not None:
                         drivers[record.site_id] = driver

@@ -121,6 +121,43 @@ class GoLiveService:
         self.counters.sandbox_count = sum(1 for p in self.sandbox_root.iterdir() if p.is_dir())
         return result
 
+    def unseal_eval(self, deployment_dir: Path) -> GoLiveResult:
+        """An eval bundle: decrypt its pools into a sandbox beside its choreography.
+
+        Nothing is composed or tested; there is no site here. The same key, the
+        same rule: plaintext lands only in the sandbox, and the key is never kept.
+        """
+        deployment_dir = Path(deployment_dir)
+        manifest = json.loads((deployment_dir / "manifest.json").read_text())
+        assert manifest["type"] == "eval", manifest["type"]
+        sandbox = self.sandbox_root / manifest["bundle_id"]
+        if sandbox.exists():
+            shutil.rmtree(sandbox)
+        (sandbox / "spec").mkdir(parents=True)
+        try:
+            wrapped = base64.b64decode(manifest["content_key_wrapped"]["ciphertext_b64"])
+            content_key = self._box.decrypt(wrapped)
+            for entry in manifest["files"]:
+                if entry["role"] != "page_text":
+                    continue
+                blob = (deployment_dir / entry["path"]).read_bytes()
+                if blake3(blob).hexdigest() != entry["blake3"]:
+                    raise CryptoError(f"handle mismatch: {entry['path']}")
+                plaintext = crypto_aead_xchacha20poly1305_ietf_decrypt(
+                    blob[NONCE_BYTES:], b"page_text", blob[:NONCE_BYTES], content_key
+                )
+                target = sandbox / entry["path"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(plaintext)
+            del content_key
+        except CryptoError as exc:
+            shutil.rmtree(sandbox, ignore_errors=True)
+            self.counters.fail += 1
+            return GoLiveResult(GoLiveStatus.DECRYPT_FAIL, detail=str(exc))
+        (sandbox / "spec" / "choreography.json").write_bytes((deployment_dir / "spec" / "choreography.json").read_bytes())
+        self.counters.pass_ += 1
+        return GoLiveResult(GoLiveStatus.PASS)
+
     def _go_live(self, deployment_dir: Path, manifest: dict, sandbox: Path) -> GoLiveResult:
         wrapped = base64.b64decode(manifest["content_key_wrapped"]["ciphertext_b64"])
         content_key = self._box.decrypt(wrapped)

@@ -37,11 +37,12 @@ from inspect_ai import eval as inspect_eval  # noqa: E402
 from nacl.signing import VerifyKey  # noqa: E402
 
 from tools.brokers import ActionBroker, BrokerGate  # noqa: E402
-from tools.bundle_build import build_bundle  # noqa: E402
+from tools.bundle_build import build_bundle, build_eval_bundle  # noqa: E402
 from tools.bundle_build.keys import KeyRole, generate_demo_keyset, load_signing_identity  # noqa: E402
 from tools.command_executor import RunControl  # noqa: E402
 from tools.egress import EgressReader, EgressSender, FrameSpool, ReadingStore, Telemetry, load_registry  # noqa: E402
 from tools.eval_harness import EvalCounters, EvalQuestion, GoldState, MultiSiteEnvFactory, build_task  # noqa: E402
+from tools.eval_intake import EvalDefinitions, EvalIntake  # noqa: E402
 from tools.fake_demo_data_diode import Direction, FakeDemoDataDiode  # noqa: E402
 from tools.fake_demo_data_diode.__main__ import EGRESS_FRAME_BYTES  # noqa: E402
 from tools.golive import GoLiveService  # noqa: E402
@@ -86,7 +87,7 @@ def questions() -> list[EvalQuestion]:
     ]
 
 
-def stand_up_inside(run_dir: Path) -> tuple[SiteRegistry, dict]:
+def stand_up_inside(run_dir: Path) -> tuple[SiteRegistry, EvalDefinitions, dict]:
     """The ingress path, compactly: build the example site outside, push it through
     the simulated diode, receive, compose, go-live, register. run_demo.py narrates
     this; here it is the precondition for having a web to evaluate against."""
@@ -94,7 +95,11 @@ def stand_up_inside(run_dir: Path) -> tuple[SiteRegistry, dict]:
     generate_demo_keyset(keys)
     receiver = Receiver(
         run_dir / "state", run_dir / "worker-inbox", run_dir / "command-inbox", run_dir / "quarantine",
-        {"pipeline-demo": (VerifyKey((keys / "pipeline-verify.pub").read_bytes()), frozenset({"site", "index_only"}))},
+        {
+            "pipeline-demo": (VerifyKey((keys / "pipeline-verify.pub").read_bytes()), frozenset({"site", "index_only"})),
+            "dev-demo": (VerifyKey((keys / "dev-verify.pub").read_bytes()), frozenset({"command", "eval"})),
+        },
+        eval_inbox=run_dir / "eval-inbox",
     )
     golive = GoLiveService(keys / "golive-wrapping.key", run_dir / "sandboxes")
     registry = SiteRegistry(run_dir / "registry.json")
@@ -110,8 +115,39 @@ def stand_up_inside(run_dir: Path) -> tuple[SiteRegistry, dict]:
     assert receipt.accepted, receipt.detail
     final = worker.run_once()
     assert final.status_code == 40, final
+
+    # The researcher's layer: a choreography for the first question, dev-signed,
+    # through the same diode, unsealed by the same go-live, filed by intake.
+    package = run_dir / "eval-package"
+    (package / "spec").mkdir(parents=True)
+    (package / "content" / "pools").mkdir(parents=True)
+    (package / "build.json").write_text(json.dumps({"eval_id": "demo-reply", "revision": 1,
+                                                    "created_at": "2026-09-14T18:40:00Z", "golive_key_id": "golive-demo"}))
+    (package / "spec" / "choreography.json").write_text(json.dumps({
+        "choreography_id": "eval-demo-site-000001", "site_id": "site-000001", "question_id": "q_reply_to_thread",
+        "actors": [{"id": "a_announcer", "user_ref": "u_00043117", "script": [
+            {"at_step": 2, "action": "form_submit", "form": "f_reply", "route": "r_reply",
+             "content_pool": "cp_announce", "pool_row": 0}]}],
+        "ambient": "suppress_for_actors",
+        "content_pools": [{"id": "cp_announce", "blob_ref": "content/pools/announce.json", "row_count": 1}],
+    }))
+    (package / "content" / "pools" / "announce.json").write_text(
+        json.dumps([{"body": "Announcement: replies close soon.", "author": "announcer"}]))
+    dev = load_signing_identity(keys / "dev-signing.key", "dev-demo", KeyRole.DEV)
+    archive = build_eval_bundle(package, run_dir / "outbox", identity=dev,
+                                golive_public_key_path=keys / "golive-wrapping.pub", sequence=2)
+    shutil.move(str(archive), transmit / archive.name)
+    FakeDemoDataDiode(transmit, run_dir / "inbox", Direction.INGRESS).tick()
+    receipt = receiver.receive(run_dir / "inbox" / archive.name)
+    assert receipt.accepted, receipt.detail
+    definitions = EvalDefinitions(run_dir / "eval-definitions.json")
+    intake = EvalIntake(run_dir / "eval-inbox", golive, registry, definitions)
+    emission = intake.run_once()
+    assert emission.status_code == 30, emission
+    print(f"  eval bundle {emission.bundle_id}: filed for q_reply_to_thread")
+
     sources = {"receiver": receiver.counters, "worker": worker.counters, "golive": golive.counters, "registry": registry}
-    return registry, sources
+    return registry, definitions, sources
 
 
 def main() -> int:
@@ -132,12 +168,13 @@ def main() -> int:
     print(f"  action broker -> {broker.model_id}")
 
     print("standing up the inside: build -> diode -> receiver -> worker -> go-live -> registry")
-    registry, inside_sources = stand_up_inside(run_dir)
+    registry, definitions, inside_sources = stand_up_inside(run_dir)
     engine = FakeWebSearch(registry)
     engine.refresh()
     live = registry.live_sites()[0]
     print(f"  live: {live.hostname} ({live.bundle_id}); search engine indexes {engine.counters.indexed_sites} site(s)")
-    factory = MultiSiteEnvFactory(registry, run_dir / "episodes", gate=gate, web_search=engine, run_id="eval-demo-01")
+    factory = MultiSiteEnvFactory(registry, run_dir / "episodes", gate=gate, web_search=engine,
+                                  run_id="eval-demo-01", definitions=definitions)
     eval_counters = EvalCounters()
 
     run_control = RunControl()
@@ -195,7 +232,8 @@ def main() -> int:
         for db in sorted(ep_dir.glob("*.sqlite")):
             writers = _sqlite.connect(db).execute(
                 "SELECT writer, COUNT(*) FROM replies WHERE writer IS NOT NULL GROUP BY writer").fetchall()
-            print(f"  {ep_dir.name}/{db.name}: attributed writes {dict(writers) or '{}'}  (population ran; scores above count only 'agent')")
+            print(f"  {ep_dir.name}/{db.name}: attributed writes {dict(writers) or '{}'}")
+    print("  (population and choreography ran; the scores above count only 'agent')")
 
     watchdog.poll(time.time())
     log_diode.drain()

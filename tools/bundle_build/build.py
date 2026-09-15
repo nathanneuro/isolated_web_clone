@@ -27,7 +27,7 @@ from blake3 import blake3
 from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_encrypt
 from nacl.public import SealedBox
 
-from tools.bundle_lint import lint_population, lint_spec, lint_suite
+from tools.bundle_lint import lint_choreography, lint_population, lint_spec, lint_suite
 
 from .keys import KeyRole, SigningIdentity, load_golive_public_key
 
@@ -305,3 +305,82 @@ def build_command_bundle(
         for name in ("manifest.json", "manifest.sig"):
             tar.add(staging / name, arcname=name, recursive=False)
     return archive
+
+
+def build_eval_bundle(
+    package_dir: Path,
+    output_dir: Path,
+    *,
+    identity: SigningIdentity,
+    golive_public_key_path: Path,
+    sequence: int,
+    content_key: bytes | None = None,
+) -> Path:
+    """Build one signed eval bundle: a choreography and its pools (population spec §4.4).
+
+    Dev-signed, because the researcher authors it; content-encrypted, because the
+    pool rows are text. The package is `build.json` ({eval_id, revision, created_at,
+    golive_key_id}), `spec/choreography.json`, and the pool files it names.
+    """
+    if identity.role is not KeyRole.DEV:
+        raise BuildError(f"eval bundles must be signed with a dev key, got {identity.role.value}")
+    package_dir = Path(package_dir)
+    meta = json.loads((package_dir / "build.json").read_text())
+    choreography = json.loads((package_dir / "spec" / "choreography.json").read_text())
+    bundle_id = f"eval-{meta['eval_id']}-r{meta['revision']}"
+    content_key = content_key or secrets.token_bytes(CONTENT_KEY_BYTES)
+    staging = Path(output_dir) / f"{bundle_id}.bundle"
+    if staging.exists():
+        raise BuildError(f"{staging} already exists; a revision is immutable once signed")
+    (staging / "content").mkdir(parents=True)
+    (staging / "spec").mkdir()
+    try:
+        files: list[dict] = []
+        for i, pool in enumerate(choreography.get("content_pools", [])):
+            source = package_dir / pool["blob_ref"]
+            if not source.is_file():
+                raise BuildError(f"pool {pool['id']} points at missing file {pool['blob_ref']}")
+            blob = encrypt_blob(source.read_bytes(), content_key, "page_text")
+            digest = blake3(blob).hexdigest()
+            handle = f"content/{digest}.blob"
+            (staging / handle).write_bytes(blob)
+            files.append({"path": handle, "blake3": digest, "bytes": len(blob), "role": "page_text"})
+            choreography["content_pools"][i]["blob_ref"] = handle
+
+        manifest_files = {entry["path"]: entry["role"] for entry in files}
+        findings = lint_choreography(choreography, None, manifest_files)
+        if findings:
+            raise BuildError(
+                "lint rejected the choreography: " + ", ".join(f"{f.code}@{f.location}" for f in findings)
+            )
+        payload = canonical_json(choreography)
+        (staging / "spec" / "choreography.json").write_bytes(payload)
+        files.append({"path": "spec/choreography.json", "blake3": blake3(payload).hexdigest(),
+                      "bytes": len(payload), "role": "choreography"})
+
+        sealed = SealedBox(load_golive_public_key(golive_public_key_path)).encrypt(content_key)
+        manifest = {
+            "format_version": FORMAT_VERSION,
+            "bundle_id": bundle_id,
+            "type": "eval",
+            "sequence": sequence,
+            "created_at": meta["created_at"],
+            "signer_key_id": identity.key_id,
+            "content_key_wrapped": {
+                "recipient_key_id": meta["golive_key_id"],
+                "algorithm": WRAP_ALGORITHM,
+                "ciphertext_b64": _b64(sealed),
+            },
+            "files": sorted(files, key=lambda entry: entry["path"]),
+        }
+        manifest_bytes = canonical_json(manifest)
+        (staging / "manifest.json").write_bytes(manifest_bytes)
+        (staging / "manifest.sig").write_bytes(identity.sign(manifest_bytes))
+        archive = Path(output_dir) / f"{bundle_id}.bundle.tar"
+        with tarfile.open(archive, "w") as tar:
+            for path in sorted(p for p in staging.rglob("*") if p.is_file()):
+                tar.add(path, arcname=str(path.relative_to(staging)), recursive=False)
+        return archive
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise

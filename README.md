@@ -86,12 +86,14 @@ skills/
 tools/
   bundle_lint/            spec, suite, population, and choreography linter; runs outside
                           before signing and inside on receipt
-  bundle_build/           outside: encrypt, rewrite handles, lint, sign; site and command bundles
+  bundle_build/           outside: encrypt, rewrite handles, lint, sign; site, command, and eval bundles
   fake_demo_data_diode/   SIMULATED diode for demos and tests; replace with hardware
   receiver/               inside: layout, signature, sequence, hashes, lint; dispatch
   worker/                 inside: sanity-check, classify, compose, go-live, register; codes only
   compose_fastapi_sqlite_v1/  Tier A deterministic generator, plus dry-run classification
-  golive/                 inside: unwrap key, decrypt into sandbox, compose, run suite, codes
+  golive/                 inside: unwrap key, decrypt into sandbox, compose, run suite, codes;
+                          unseals eval bundles too
+  eval_intake/            inside: eval bundles -> choreographies checked against the live site
   registry/               inside control plane: live revision per hostname, supersede, retire
   command_executor/       inside: signed dev commands -> run control, registry, receiver trust
   brokers/                the agent zone's only two reachable endpoints; cross-site via the
@@ -188,10 +190,6 @@ remaining gaps are known and are not the design:
   rather than named classes; everything else in the sandbox spec's table exists.
 - Tier B (`compose-static-v1`) is not written. A Tier B bundle classifies
   UNSUPPORTED inside.
-- Eval choreography (the dev-signed per-question schedule) is a linted document
-  and a driver input, but no bundle type carries it through the diode yet; the
-  ambient population does travel with its site.
-
 What goes through the diode is content: site bundles, their ongoing revisions,
 and signed commands. Infrastructure (the search engine, the brokers, the
 watchdog, model weights) is installed inside before evals begin, by the wired
