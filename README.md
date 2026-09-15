@@ -68,6 +68,7 @@ Everything in the repo exists to hold one of these:
 | [`docs/scale-and-storage-spec.md`](docs/scale-and-storage-spec.md) | What 10^5 sites changes: where site data lives, where a real database belongs, and why those are different places |
 | [`docs/synthetic-population-spec.md`](docs/synthetic-population-spec.md) | Millions of synthetic users: ambient liveness from the pipeline, and per-question eval choreography from the researcher |
 | [`docs/log-diode-spec.md`](docs/log-diode-spec.md) | The third one-way link: eval cluster to logging cluster. Why the agent has a motive to edit the record, and why nothing leaves the logging cluster uncleaned |
+| [`docs/glossary.md`](docs/glossary.md) | Every term above in one sentence each, with the spec section or file that owns it |
 | [`skills/site-reconstruct/SKILL.md`](skills/site-reconstruct/SKILL.md) | Outside agent: scrape → spec + templates + seed DB + tests |
 | [`skills/site-qa/SKILL.md`](skills/site-qa/SKILL.md) | Outside agent: adversarial checks before encryption |
 | [`skills/inside-worker/SKILL.md`](skills/inside-worker/SKILL.md) | Inside agent: verified bundle → deployment, structure only |
@@ -78,6 +79,7 @@ Read them in that order.
 
 ```
 docs/                     specs and design plan (above)
+  glossary.md             one sentence per term, with its owner
 skills/
   site-reconstruct/       outside agent: scrape -> spec + templates + seed DB + tests
   site-qa/                outside agent: adversarial checks before encryption
@@ -125,6 +127,7 @@ scripts/
   run_demo.py             ingress pipeline end to end, plus a command and the metrics channel
   run_eval_demo.py        an eval with the watchdog and both outbound channels
   fetch_demo_models.py    fetch the two sub-1B demo models (runs OUTSIDE the airgap)
+  demo_layout.py          writes LAYOUT.md into each run directory: which zone owns each entry
 tests/                    one file per tool; `uv run pytest`
 models/                   gitignored. Weights are provisioned physically, never by diode.
 ```
@@ -162,6 +165,9 @@ population posting alongside the agent and scored as nobody's, trajectories
 promoted on the logging side, and a canary trip that halts the run and flips
 `sandbox.escape_indicator` on the dashboard.
 
+Each run directory gets a `LAYOUT.md` saying which zone would own each entry in
+a real deployment, since on one host they all sit side by side.
+
 ## What is deliberately not here
 
 - **The scraper and explorer.** They touch the real internet and are the part most likely to need per-deployment judgement about robots, terms, and rate limits. `site-reconstruct` documents the input layout they must produce.
@@ -190,8 +196,8 @@ remaining gaps are known and are not the design:
   rather than named classes; everything else in the sandbox spec's table exists.
 - Tier B (`compose-static-v1`) is not written. A Tier B bundle classifies
   UNSUPPORTED inside.
-What goes through the diode is content: site bundles, their ongoing revisions,
-and signed commands. Infrastructure (the search engine, the brokers, the
+What goes through the diode is content and intent: site bundles, their ongoing
+revisions, signed commands, and new or updated evals as dev-signed `eval` bundles. Infrastructure (the search engine, the brokers, the
 watchdog, model weights) is installed inside before evals begin, by the wired
 terminal and physical media, and is updated the same way.
 

@@ -36,6 +36,8 @@ from inspect_ai import eval as inspect_eval  # noqa: E402
 
 from nacl.signing import VerifyKey  # noqa: E402
 
+from demo_layout import print_layout, write_layout  # noqa: E402
+
 from tools.brokers import ActionBroker, BrokerGate  # noqa: E402
 from tools.bundle_build import build_bundle, build_eval_bundle  # noqa: E402
 from tools.bundle_build.keys import KeyRole, generate_demo_keyset, load_signing_identity  # noqa: E402
@@ -284,6 +286,9 @@ def main() -> int:
             indent=1,
         )
     )
+    print("\n[run directory] one host, every zone; LAYOUT.md names which is which")
+    write_layout(run_dir)
+    print_layout(run_dir)
     print(f"\nrun directory: {run_dir.relative_to(ROOT)}")
     return 0
 
