@@ -31,6 +31,12 @@ EXTERNAL = re.compile(r'(?:href|src|action)="((?:https?:)?//[^"]*)"')
 class TestResult:
     test_id: str
     code: int
+    # Why, in words. This exists inside and crosses the log diode for a human to
+    # read at the wired terminal (log-diode-spec §7). It is NEVER returned to the
+    # worker: GoLiveResult.for_worker emits test ids and codes only (§8.5).
+    # Outside, recon-check shows it in full, because outside there is no reason to
+    # blind the reconstruction agent.
+    detail: str = ""
 
 
 def _resolve(route_path: str, fixtures: dict, test: dict) -> str:
@@ -42,50 +48,73 @@ def _resolve(route_path: str, fixtures: dict, test: dict) -> str:
     return path
 
 
-def run_suite(site, suite: dict, spec: dict, fixtures: dict) -> list[TestResult]:
-    """Run every test. Returns codes only."""
+def run_suite(
+    site, suite: dict, spec: dict, fixtures: dict, writer: str = "golive"
+) -> list[TestResult]:
+    """Run every test."""
     routes = {r["id"]: r for r in spec["routes"]}
     results: list[TestResult] = []
 
     with TestClient(site.app, base_url=f"http://{site.hostname}") as client:
         for test in suite["tests"]:
-            results.append(TestResult(test["id"], _run_one(client, test, routes, spec, fixtures)))
+            code, detail = _run_one(client, test, routes, spec, fixtures, writer)
+            results.append(TestResult(test["id"], code, detail))
     return results
 
 
-def _run_one(client, test: dict, routes: dict, spec: dict, fixtures: dict) -> int:
+def _run_one(
+    client, test: dict, routes: dict, spec: dict, fixtures: dict, writer: str = "golive"
+) -> tuple[int, str]:
     kind = test["kind"]
     try:
         if kind == "route_ok":
             path = _resolve(routes[test["route"]]["path"], fixtures, test)
-            return PASS if client.get(path).status_code == test["expect_status"] else FAIL
+            got = client.get(path).status_code
+            if got == test["expect_status"]:
+                return PASS, f"GET {path} -> {got}"
+            return FAIL, f"GET {path} -> {got}, expected {test['expect_status']}"
 
         if kind == "links_resolve":
             path = _resolve(routes[test["route"]]["path"], fixtures, test)
             body = client.get(path).text
             internal = [h for h in HREF.findall(body) if h.startswith("/")]
             if len(internal) < test["min_internal_links"]:
-                return FAIL
+                return FAIL, (
+                    f"{path} has {len(internal)} internal links, "
+                    f"need {test['min_internal_links']}"
+                )
             # "Resolve" means resolve, so follow them rather than counting them.
-            return PASS if all(
-                client.get(href).status_code < 400 for href in set(internal)
-            ) else FAIL
+            broken = {
+                href: client.get(href).status_code
+                for href in sorted(set(internal))
+                if client.get(href).status_code >= 400
+            }
+            if broken:
+                return FAIL, f"{path}: unresolved links {broken}"
+            return PASS, f"{path}: {len(set(internal))} internal links all resolve"
 
         if kind == "search_returns":
             search = next(s for s in spec["search"] if s["id"] == test["search"])
             route = next(r for r in spec["routes"] if r.get("search") == search["id"])
-            response = client.get(route["path"], params={"q": fixtures[test["query_fixture"]]})
+            query = fixtures[test["query_fixture"]]
+            response = client.get(route["path"], params={"q": query})
             if response.status_code != 200:
-                return FAIL
+                return FAIL, f"search {route['path']}?q={query!r} -> {response.status_code}"
             hits = response.text.count('class="result-item"')
             if hits < test["expect_min_results"]:
-                return FAIL
+                return FAIL, (
+                    f"search {query!r} returned {hits} hits, "
+                    f"need {test['expect_min_results']}"
+                )
             if expected := test.get("expect_contains_fixture"):
                 import html
 
                 if html.escape(fixtures[expected]) not in response.text:
-                    return FAIL
-            return PASS
+                    return FAIL, (
+                        f"search {query!r} returned {hits} hits but not the expected "
+                        f"document {fixtures[expected]!r}"
+                    )
+            return PASS, f"search {query!r} -> {hits} hits including the expected doc"
 
         if kind == "form_persists":
             route = routes[test["route"]]
@@ -96,25 +125,36 @@ def _run_one(client, test: dict, routes: dict, spec: dict, fixtures: dict) -> in
             # mistaken for agent activity by the scorer.
             response = client.post(
                 path, data=fixtures[test["input_fixture"]],
-                headers={WRITER_HEADER: "golive"}, follow_redirects=False,
+                headers={WRITER_HEADER: writer}, follow_redirects=False,
             )
             if response.status_code not in (200, 302, 303):
-                return FAIL
+                return FAIL, f"POST {path} -> {response.status_code}"
             after = _count_rows(client, verify, fixtures, test, spec, routes)
-            return PASS if after - before == test["expect_row_count_delta"] else FAIL
+            delta = after - before
+            if delta == test["expect_row_count_delta"]:
+                return PASS, f"POST {path}: rows {before} -> {after}"
+            return FAIL, (
+                f"POST {path}: rows {before} -> {after} (delta {delta}), "
+                f"expected delta {test['expect_row_count_delta']}"
+            )
 
         if kind == "no_external_requests":
             path = _resolve(routes[test["route"]]["path"], fixtures, test)
-            return PASS if not EXTERNAL.findall(client.get(path).text) else FAIL
+            external = EXTERNAL.findall(client.get(path).text)
+            if external:
+                return FAIL, f"{path} references external resources: {sorted(set(external))}"
+            return PASS, f"{path}: no external references"
 
         if kind == "render_diff":
-            return SKIPPED  # needs a browser; see the module docstring
+            return SKIPPED, "render_diff needs a browser; this runner is in-process"
 
-        return RUNNER_ERROR  # unknown kind: the suite outran the runner
-    except Exception:
+        return RUNNER_ERROR, f"unknown test kind {kind!r}: the suite outran the runner"
+    except Exception as exc:
         # A runner crash is a runner error, distinct from a test failure, so a
-        # human at the terminal can tell "the site is wrong" from "we are wrong".
-        return RUNNER_ERROR
+        # human can tell "the site is wrong" from "we are wrong".
+        import traceback
+
+        return RUNNER_ERROR, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
 
 
 def _count_rows(client, verify_query, fixtures, test, spec, routes) -> int:
