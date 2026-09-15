@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from typing import Callable
 from urllib.parse import urlparse
 
 from .action_broker import (
@@ -38,7 +39,11 @@ from .action_broker import (
 from .gate import BrokerGate
 
 MAX_STEPS_PER_EPISODE = 100
-INTERNAL_PATH = re.compile(r"^/[A-Za-z0-9_\-./?=&{}]{0,255}$")
+# A path on the current site. `//` is a protocol-relative URL, not a path.
+INTERNAL_PATH = re.compile(r"^/(?!/)[A-Za-z0-9_\-./?=&{}]{0,255}$")
+# A link to another live site: scheme optional, hostname registered, path internal.
+CROSS_SITE = re.compile(r"^(?:https?:)?//([a-z0-9][a-z0-9.\-]{0,61}\.internal)(/[A-Za-z0-9_\-./?=&{}]{0,255})?$")
+WEB_SEARCH_PATH = "/websearch"
 # Must match tools.compose_fastapi_sqlite_v1.WRITER_HEADER; asserted in the tests
 # rather than imported, so the broker does not depend on the site framework.
 AGENT_WRITER = {"x-writer": "agent"}
@@ -163,18 +168,36 @@ class EnvCounters:
     bad_action: int = 0
     steps: int = 0
     writes: int = 0  # successful POSTs; not a registry metric, read by D10
+    site_switches: int = 0  # moves between live sites; not a registry metric
 
     def as_metrics(self) -> dict[str, int]:
         return {"broker.env_denied": self.denied + self.off_site + self.bad_action}
 
 
 class EnvBroker:
-    """Drives one live site on the agent's behalf. One site, one episode."""
+    """Drives live sites on the agent's behalf, one episode at a time.
+
+    It starts on a home site. It may move to another site only through `resolve`,
+    which answers for registered live hostnames and nothing else, and only by a
+    link on a page it served or a fake-web search result. A hostname `resolve`
+    does not know is off-site, counted, and refused. The agent never holds a
+    socket; it holds a browser pointed at the registry.
+    """
 
     def __init__(
-        self, client, hostname: str, search_path: str = "/search", gate: BrokerGate | None = None
+        self,
+        client,
+        hostname: str,
+        search_path: str = "/search",
+        gate: BrokerGate | None = None,
+        *,
+        resolve: Callable[[str], object | None] | None = None,
+        web_search=None,
     ) -> None:
         self._client = client
+        self._clients = {hostname: client}
+        self._resolve = resolve
+        self._web_search = web_search
         self.hostname = hostname
         self.search_path = search_path
         self._gate = gate or BrokerGate()  # the watchdog's halt: refused and counted
@@ -182,12 +205,47 @@ class EnvBroker:
         self._form_state: dict[str, str] = {}
         self.current_path = "/"
         self._last_body = ""
+        self._synthetic: str | None = None  # a results page the broker itself rendered
 
     def observe(self) -> PageView:
         if self._gate.severed:
             self.counters.denied += 1
             return PageView(path=self.current_path, status=503, page_text="")
+        if self._synthetic is not None:
+            return self._parse(self.current_path, 200, self._synthetic)
         return self._get(self.current_path)
+
+    # -- where a link may take the agent ----------------------------------------
+
+    @staticmethod
+    def _target(url: str) -> tuple[str | None, str] | None:
+        """(hostname or None, path) for a URL the agent may follow; None otherwise."""
+        match = CROSS_SITE.match(url)
+        if match:
+            return match.group(1), match.group(2) or "/"
+        if INTERNAL_PATH.match(url):
+            return None, url
+        return None
+
+    def _go(self, url: str) -> bool:
+        """Move to a URL, switching site if it names one. False means refused."""
+        target = self._target(url)
+        if target is None:
+            self.counters.off_site += 1
+            return False
+        host, path = target
+        if host is not None and host != self.hostname:
+            client = self._clients.get(host) or (self._resolve(host) if self._resolve else None)
+            if client is None:
+                self.counters.off_site += 1
+                return False
+            self._clients[host] = client
+            self._client, self.hostname = client, host
+            self._form_state.clear()
+            self.counters.site_switches += 1
+        self.current_path = path
+        self._synthetic = None
+        return True
 
     def apply(self, action: Action, elements: tuple[Element, ...]) -> PageView:
         """Perform one action. Anything not permitted is a no-op plus a counter."""
@@ -198,14 +256,16 @@ class EnvBroker:
         selectors = {e.selector for e in elements}
 
         if action.kind is ActionKind.GOTO:
-            if not INTERNAL_PATH.match(action.selector):
-                self.counters.off_site += 1
-                return self.observe()
-            self.current_path = action.selector
+            self._go(action.selector)
             return self.observe()
 
         if action.kind is ActionKind.SEARCH:
-            self.current_path = f"{self.search_path}?q={action.text}"
+            if self._web_search is not None:
+                self._synthetic = self._results_page(action.text)
+                self.current_path = f"{WEB_SEARCH_PATH}?q={action.text}"
+            else:
+                self.current_path = f"{self.search_path}?q={action.text}"
+                self._synthetic = None
             return self.observe()
 
         if action.kind is ActionKind.CLICK:
@@ -216,7 +276,7 @@ class EnvBroker:
             if target is None:
                 self.counters.denied += 1
                 return self.observe()
-            self.current_path = target
+            self._go(target)
             return self.observe()
 
         if action.kind is ActionKind.TYPE:
@@ -256,10 +316,11 @@ class EnvBroker:
             self._gate.agent_writes += 1  # D10 compares this with what the site attributes
         if response.status_code in (302, 303) and (location := response.headers.get("location")):
             if INTERNAL_PATH.match(location):
-                self.current_path = location
+                self.current_path = location  # a site redirects within itself only
             else:
                 self.counters.off_site += 1
         self._form_state.clear()
+        self._synthetic = None
         return self.observe()
 
     def _get(self, path: str) -> PageView:
@@ -268,22 +329,37 @@ class EnvBroker:
             path = "/"
             self.current_path = "/"
         response = self._client.get(path, follow_redirects=False)
-        self._last_body = response.text
+        return self._parse(path, response.status_code, response.text)
+
+    def _parse(self, path: str, status: int, body: str) -> PageView:
+        self._last_body = body
         parser = _PageParser()
-        parser.feed(response.text)
+        parser.feed(body)
         return PageView(
             path=path,
-            status=response.status_code,
+            status=status,
             page_text=" ".join(parser.text)[:MAX_PAGE_CHARS],
             elements=tuple(parser.elements[:64]),
             links=tuple(parser.links),
         )
 
+    def _results_page(self, query: str) -> str:
+        """The fake-web results page, rendered by the broker. Structure is the
+        broker's; titles are site content, which the agent sees anyway."""
+        from html import escape
+
+        items = "".join(
+            f'<li class="result-item"><a id="result-{i}" href="//{hit.hostname}{hit.path}">{escape(hit.title)}</a>'
+            f" <span>{hit.hostname}</span></li>"
+            for i, hit in enumerate(self._web_search.search(query, limit=10), start=1)
+        )
+        return f'<html><body><h1>Web search</h1><ul id="web-results">{items}</ul></body></html>'
+
     def _href_for(self, selector: str) -> str | None:
         """Resolve a clickable selector to its href, on the page the agent saw."""
         parser = _LinkParser(selector)
         parser.feed(self._last_body)
-        if parser.href is not None and INTERNAL_PATH.match(parser.href):
+        if parser.href is not None and self._target(parser.href) is not None:
             return parser.href
         return None
 

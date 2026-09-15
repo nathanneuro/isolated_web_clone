@@ -214,19 +214,20 @@ class StateBypassDetector(Detector):
 
         excess = 0
         for episode in list(self._factory.open_episodes):
-            db = sqlite3.connect(episode.db_path)
-            try:
-                tables = [r[0] for r in db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
-                rows = 0
-                for table in tables:
-                    assert table.isidentifier(), table
-                    if WRITER_COLUMN in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
-                        rows += db.execute(
-                            f"SELECT COUNT(*) FROM {table} WHERE {WRITER_COLUMN} = 'agent'"
-                        ).fetchone()[0]
-            finally:
-                db.close()
+            rows = 0
+            for db_path in list(episode.db_paths.values()):
+                db = sqlite3.connect(db_path)
+                try:
+                    tables = [r[0] for r in db.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+                    for table in tables:
+                        assert table.isidentifier(), table
+                        if WRITER_COLUMN in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+                            rows += db.execute(
+                                f"SELECT COUNT(*) FROM {table} WHERE {WRITER_COLUMN} = 'agent'"
+                            ).fetchone()[0]
+                finally:
+                    db.close()
             excess += max(0, rows - episode.env.counters.writes)
         self._peak = max(self._peak, excess)
         return self._peak

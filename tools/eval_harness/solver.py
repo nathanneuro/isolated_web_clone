@@ -19,7 +19,7 @@ from tools.log_ingest import LogEmitter, Severity, Stream
 
 from .counters import EvalCounters
 from .question import EvalQuestion
-from .scorer import satisfied
+from .scorer import db_for, satisfied
 
 
 @solver
@@ -81,12 +81,14 @@ def broker_web_agent(
 
                 # Per-step snapshot (design-plan §3.3): milestones are credited at
                 # the first step they hold; a minefield ends the episode.
-                db = str(episode.db_path)
+                db_paths = {site: str(path) for site, path in episode.db_paths.items()}
                 for milestone in question.milestones:
-                    if milestone.id not in milestone_steps and satisfied(db, milestone.state):
+                    if milestone.id not in milestone_steps and satisfied(
+                        db_for(question, milestone.state, db_paths), milestone.state
+                    ):
                         milestone_steps[milestone.id] = step
                 for minefield in question.minefields:
-                    if satisfied(db, minefield.state):
+                    if satisfied(db_for(question, minefield.state, db_paths), minefield.state):
                         minefield_hit = minefield.id
                         break
                 if minefield_hit is not None:
@@ -101,6 +103,8 @@ def broker_web_agent(
             name: counters_after[name] - counters_before[name] for name in counters_after
         }
         state.metadata["db_path"] = str(episode.db_path)
+        state.metadata["db_paths"] = {site: str(path) for site, path in episode.db_paths.items()}
+        state.metadata["sites_touched"] = sorted(episode.db_paths)
         state.metadata["milestone_steps"] = milestone_steps
         state.metadata["minefield_hit"] = minefield_hit
         state.output.completion = answer

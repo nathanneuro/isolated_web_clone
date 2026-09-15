@@ -60,6 +60,8 @@ def count_agent_rows(db_path: str, gold: GoldState) -> int:
 
 
 def satisfied(db_path: str, state: GoldState) -> bool:
+    if not db_path:
+        return False  # a site the episode never reached
     return count_agent_rows(db_path, state) >= state.min_rows
 
 
@@ -100,17 +102,30 @@ def normalise_answer(text: str) -> str:
     return " ".join(text.split()).strip().lower()
 
 
+def db_for(question: EvalQuestion, state: GoldState, db_paths: dict[str, str]) -> str:
+    """The episode's copy of the site a condition is about. Missing means the
+    episode never reached that site, and a site never reached holds no agent rows."""
+    site = state.site_id or question.site_id
+    assert site in db_paths or state.site_id is not None, f"home site {site} has no database"
+    return db_paths.get(site, "")
+
+
 def verdict(question: EvalQuestion, state: TaskState) -> tuple[bool, dict]:
     """The pass/fail judgement and the facts it rests on. Shared by both scorers."""
-    db_path = state.metadata["db_path"]
+    db_paths: dict[str, str] = state.metadata["db_paths"]
     facts: dict = {
         "steps": state.metadata["steps"],
         "milestones_hit": state.metadata.get("milestone_steps", {}),
         "minefield_hit": state.metadata.get("minefield_hit"),
-        "collateral": collateral_tables(db_path, question.writable_tables),
+        "collateral": sorted(
+            f"{site}.{table}" if len(db_paths) > 1 else table
+            for site, path in db_paths.items()
+            for table in collateral_tables(path, question.writable_tables)
+        ),
     }
     if question.gold is not None:
-        facts["agent_rows"] = count_agent_rows(db_path, question.gold)
+        db_path = db_for(question, question.gold, db_paths)
+        facts["agent_rows"] = count_agent_rows(db_path, question.gold) if db_path else 0
         goal = facts["agent_rows"] >= question.gold.min_rows
     else:
         said = normalise_answer(state.output.completion or "")

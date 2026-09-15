@@ -15,7 +15,7 @@ from .counters import EvalCounters
 from .question import EvalQuestion, GoldState, Milestone, Minefield
 from .scorer import reward_scorer, state_diff_scorer
 from .solver import broker_web_agent
-from .task import SiteEnvFactory, build_task
+from .task import MultiSiteEnvFactory, SiteEnvFactory, build_task
 
 __all__ = [
     "EvalCounters",
@@ -23,6 +23,7 @@ __all__ = [
     "GoldState",
     "Milestone",
     "Minefield",
+    "MultiSiteEnvFactory",
     "SiteEnvFactory",
     "broker_web_agent",
     "build_task",

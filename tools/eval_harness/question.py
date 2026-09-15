@@ -34,6 +34,7 @@ class GoldState:
     table: str
     where: dict[str, str | int] = field(default_factory=dict)
     min_rows: int = 1
+    site_id: str | None = None  # None: the question's home site
 
     def __post_init__(self) -> None:
         assert self.min_rows >= 1, self.min_rows
