@@ -10,6 +10,12 @@ from the bundles.
 
 Served as a tool, Search-R1 style: a query in, ranked hits out, each hit a site,
 a document, and the path that renders it.
+
+Provisioning: this is infrastructure, not content. It is installed inside before
+evals begin, the way model weights are, by the wired terminal and physical media,
+and it never travels through the diode. What travels through the diode is the
+content it indexes: site bundles and their ongoing revisions. The engine rebuilds
+its view from the registry as those go live and retire.
 """
 
 from .engine import FakeWebSearch, Hit, SearchCounters
