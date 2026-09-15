@@ -148,6 +148,11 @@ class GoLiveService:
 
         spec = json.loads((deployment_dir / "spec" / "site.json").read_text())
         suite = json.loads((deployment_dir / "tests" / "suite.json").read_text())
+        # The spec is plaintext structure and goes into the sandbox beside the
+        # content it describes, so the search engine can mount the site from the
+        # sandbox alone and never has to look at a bundle.
+        (sandbox / "spec").mkdir(exist_ok=True)
+        (sandbox / "spec" / "site.json").write_text(json.dumps(spec, sort_keys=True))
         site = compose_app(spec, sandbox, sandbox / spec["db"]["seed_blob_ref"])
         results = run_suite(site, suite, spec, fixtures)
 
