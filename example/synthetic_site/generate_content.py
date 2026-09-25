@@ -86,6 +86,8 @@ def build_seed_db(path: Path, fake: Faker) -> list[dict]:
 def build_shard(path: Path, threads: list[dict]) -> None:
     """A minimal BM25 shard. Plain JSON: the format is the inside engine's business,
     and for the demo a readable one beats a fast one."""
+    # index/ holds nothing but generated output, so a fresh clone has no such directory.
+    path.parent.mkdir(parents=True, exist_ok=True)
     docs = {
         t["id"]: tokenize(f"{t['title']} {t['body']}") for t in threads
     }
@@ -145,7 +147,7 @@ def build_fixtures(path: Path, threads: list[dict], fake: Faker) -> None:
 def build_pool(path: Path, fake: Faker, rows: int) -> None:
     """A content pool for the ambient population: what the bots say. Invented, like
     everything else here; in the real pipeline these rows are scraped text too."""
-    path.parent.mkdir(exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(
         [{"body": fake.sentence(nb_words=8), "author": fake.user_name()} for _ in range(rows)], indent=1
     ))

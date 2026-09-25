@@ -68,6 +68,7 @@ Everything in the repo exists to hold one of these:
 | [`docs/scale-and-storage-spec.md`](docs/scale-and-storage-spec.md) | What 10^5 sites changes: where site data lives, where a real database belongs, and why those are different places |
 | [`docs/synthetic-population-spec.md`](docs/synthetic-population-spec.md) | Millions of synthetic users: ambient liveness from the pipeline, and per-question eval choreography from the researcher |
 | [`docs/log-diode-spec.md`](docs/log-diode-spec.md) | The third one-way link: eval cluster to logging cluster. Why the agent has a motive to edit the record, and why nothing leaves the logging cluster uncleaned |
+| [`docs/remote-link-spec.md`](docs/remote-link-spec.md) | Remote sites: carrying the one-way links across a WAN with red/black encryptors, what a remote developer gets, and what stays refused |
 | [`docs/glossary.md`](docs/glossary.md) | Every term above in one sentence each, with the spec section or file that owns it |
 | [`skills/site-reconstruct/SKILL.md`](skills/site-reconstruct/SKILL.md) | Outside agent: scrape → spec + templates + seed DB + tests |
 | [`skills/site-qa/SKILL.md`](skills/site-qa/SKILL.md) | Outside agent: adversarial checks before encryption |
@@ -110,6 +111,8 @@ tools/
   recon_check/            outside: the reconstructor's local lint + deploy + suite harness
   egress/                 numeric channel: frame, registry, sender, reader, metrics socket
   log_ingest/             log diode: record writer, framing, sanitiser, quarantine tier
+  black_link/             one-way link encryptor: carries a diode'd link between sites;
+                          fixed cells, constant rate, no handshake
 schemas/
   site.schema.json        site spec JSON Schema
   suite.schema.json       test suite JSON Schema
@@ -175,6 +178,7 @@ a real deployment, since on one host they all sit side by side.
 - **Training code.** The run loop is yours; `tools/command_executor` (`RunControl`) and `tools/egress` (`Telemetry`) are the interfaces it plugs into.
 - **Physical controls.** No removable media inside, terminal is display-and-keyboard only, two-person export procedure, and the FPGA egress filter that makes the rate cap real rather than advisory. [`docs/physical-controls-spec.md`](docs/physical-controls-spec.md) specifies these; code cannot enforce them.
 - **Diode hardware.** `tools/fake_demo_data_diode/` simulates the protocol so the pipeline runs on one machine. It is not a diode and does not pretend to be.
+- **Encryptor hardware.** `tools/black_link/` is the protocol a red/black inline encryptor must speak to run through a diode. It is a Python process, not a HAIPE box, and [`docs/remote-link-spec.md`](docs/remote-link-spec.md) §5 says what the hardware has to add.
 
 ## Threat model in one paragraph
 

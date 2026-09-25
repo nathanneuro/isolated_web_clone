@@ -14,6 +14,9 @@ in the specs or the code is not here, add it.
 | **fake demo data diode** | A Python process copying files between two directories, standing in for the hardware so the demos run on one host. Provides the protocol and none of the isolation. | `tools/fake_demo_data_diode/` |
 | **dev side** | The LAN-only host at the far end of the egress diode that runs the reader and the dashboard. | egress-metrics-spec §6 |
 | **logging cluster** | The far end of the log diode. Logs are untrusted input; nothing leaves it uncleaned. | log-diode-spec |
+| **red / black** | The plaintext side and the ciphertext side of an inline encryptor, on separate interfaces. Only black traffic ever touches a network nobody here controls. | remote-link-spec §1 |
+| **black link** | A one-way link carried between sites by an encryptor pair, with the diodes left at the walls. A tunnel is a cable: it adds no permission. | remote-link-spec §3.1, `tools/black_link/` |
+| **cell** | One fixed-size, authenticated black-link datagram. A cover cell carries nothing and is indistinguishable from one that does. | remote-link-spec §4.2, `tools/black_link/cell.py` |
 | **wired terminal** | Display and keyboard in the room; the only way a human reads inside logs or exports bulk data. | physical-controls-spec |
 | **zone** | An isolation boundary inside: the agent zone, the inference zone, the environment zone, the search engine. The reference code keeps zones in-process. | agent-sandbox-spec §3, §4 |
 
